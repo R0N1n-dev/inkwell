@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Inkwell</string>
+    <string name="title_activity_main">Inkwell</string>
+    <string name="package_name">com.inkwell.notes</string>
+    <string name="custom_url_scheme">com.inkwell.notes</string>
+    <string name="widget_new_note">New note</string>
+    <string name="widget_refresh">Refresh</string>
+    <string name="widget_pinned">Pinned</string>
+    <string name="widget_empty">No notes yet — tap + to capture one</string>
+    <string name="widget_small_label">Inkwell Quick Note</string>
+    <string name="widget_large_label">Inkwell Notes</string>
+</resources>

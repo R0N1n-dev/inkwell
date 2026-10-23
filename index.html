@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#2D3047" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>Inkwell</title>
+    <style>
+      /* Pre-boot splash so the app never flashes white while RxDB opens */
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #2d3047;
+      }
+      #boot-splash {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        background: linear-gradient(160deg, #2d3047 0%, #23253a 60%, #1c1e30 100%);
+        z-index: 99999;
+        transition: opacity 0.35s ease;
+      }
+      #boot-splash .drop {
+        width: 84px;
+        height: 84px;
+        animation: boot-pulse 1.6s ease-in-out infinite;
+      }
+      #boot-splash .name {
+        font-family: system-ui, -apple-system, sans-serif;
+        font-weight: 700;
+        font-size: 22px;
+        letter-spacing: 4px;
+        color: #e8e9f0;
+        text-transform: uppercase;
+      }
+      #boot-splash .sub {
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 12px;
+        letter-spacing: 2px;
+        color: #2ec4b6;
+      }
+      #boot-splash.hide {
+        opacity: 0;
+        pointer-events: none;
+      }
+      @keyframes boot-pulse {
+        0%,
+        100% {
+          transform: scale(1);
+        }
+        50% {
+          transform: scale(1.08);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="boot-splash">
+      <svg class="drop" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#2ec4b6" />
+            <stop offset="55%" stop-color="#5a7de0" />
+            <stop offset="100%" stop-color="#ff7a59" />
+          </linearGradient>
+        </defs>
+        <path
+          d="M64 8 C64 8 104 52 104 80 a40 40 0 0 1 -80 0 C24 52 64 8 64 8 Z"
+          fill="url(#bg)"
+        />
+        <path
+          d="M64 34 C64 34 84 58 84 74 a20 20 0 0 1 -40 0 C44 58 64 34 64 34 Z"
+          fill="#ffffff"
+          opacity="0.22"
+        />
+        <circle cx="52" cy="84" r="5" fill="#ffffff" opacity="0.85" />
+      </svg>
+      <div class="name">Inkwell</div>
+      <div class="sub">your words, your vault</div>
+    </div>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
