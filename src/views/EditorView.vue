@@ -8,6 +8,8 @@ import Quill from 'quill';
 import NotebookDialog from '../components/dialogs/NotebookDialog.vue';
 import TagsDialog from '../components/dialogs/TagsDialog.vue';
 import ReminderDialog from '../components/dialogs/ReminderDialog.vue';
+import VersionsDialog from '../components/dialogs/VersionsDialog.vue';
+import LinksDialog from '../components/dialogs/LinksDialog.vue';
 import { registerAttImageBlot } from '../editor/attBlot.js';
 import { useRecorder } from '../composables/useRecorder.js';
 import {
@@ -23,7 +25,8 @@ import {
   addAttachment,
   removeAttachment,
   getAttachmentUrl,
-  getAttachmentBytes
+  getAttachmentBytes,
+  duplicateNote
 } from '../db/notes.js';
 import { vaultUnlocked, vaultConfigured, unlockVault } from '../crypto/vault.js';
 import { capturePhoto, pickImages, pickFiles } from '../platform/media.js';
@@ -34,6 +37,10 @@ import { debounce, htmlToText, wordCount, noteFileName, formatSize, fullDate, da
 import { htmlToMarkdown, buildStandaloneHtml, saveTextFile, shareText } from '../utils/exporters.js';
 import { NOTE_COLORS } from '../theme/themes.js';
 import { useNotebooks } from '../composables/useQueries.js';
+import { snapshotNote } from '../db/revisions.js';
+import { extractHeadings, readingTime, extractWikiLinks } from '../utils/links.js';
+import { loadTemplates, findTemplate, saveCustomTemplate } from '../utils/templates.js';
+import { openPalette } from '../composables/usePalette.js';
 
 registerAttImageBlot();
 
@@ -64,7 +71,13 @@ const notebookDlg = ref(false);
 const tagsDlg = ref(false);
 const reminderDlg = ref(false);
 const detailsDlg = ref(false);
+const versionsDlg = ref(false);
+const linksDlg = ref(false);
+const outlineOpen = ref(false);
+const templateDlg = ref(false);
+const templateName = ref('');
 const overflow = ref(null);
+const pendingContent = ref(null);
 
 const editorEl = ref(null);
 // shallowRef: a reactive Proxy around Quill breaks Parchment's `blot.scroll === this`
@@ -76,6 +89,9 @@ const notebookTitle = computed(
   () => notebooks.value.find((n) => n.id === fields.value.notebookId)?.title || ''
 );
 const words = computed(() => wordCount(htmlToText(fields.value.content)));
+const readMin = computed(() => readingTime(words.value));
+const outline = computed(() => extractHeadings(fields.value.content));
+const wikiLinks = computed(() => extractWikiLinks(htmlToText(fields.value.content)).length);
 const images = computed(() => (docRef.value?.atts || []).filter((a) => a.type.startsWith('image/')));
 const audios = computed(() => (docRef.value?.atts || []).filter((a) => a.type.startsWith('audio/')));
 const files = computed(() => {
@@ -85,6 +101,14 @@ const files = computed(() => {
 
 const overflowItems = computed(() => [
   { label: 'Note details', icon: 'pi pi-info-circle', command: () => (detailsDlg.value = true) },
+  { label: 'Outline', icon: 'pi pi-align-left', command: () => (outlineOpen.value = true) },
+  { label: wikiLinks.value ? `Links & backlinks (${wikiLinks.value})` : 'Links & backlinks', icon: 'pi pi-link', command: openLinks },
+  { label: 'Quick switcher', icon: 'pi pi-bolt', command: openPalette },
+  { label: 'Version history', icon: 'pi pi-history', command: openVersions },
+  { label: 'Save version snapshot', icon: 'pi pi-camera', command: saveSnapshotNow },
+  { label: 'Save as template', icon: 'pi pi-bookmark', command: openSaveTemplate },
+  { label: 'Duplicate note', icon: 'pi pi-copy', command: duplicateCurrent },
+  { separator: true },
   { label: 'Share', icon: 'pi pi-share-alt', command: share },
   { label: 'Export Markdown', icon: 'pi pi-file-export', command: () => exportNote('md') },
   { label: 'Import Markdown', icon: 'pi pi-file-import', command: importMarkdown },
@@ -110,6 +134,79 @@ const overflowItems = computed(() => [
   }
 ]);
 
+/* ------------------------------ new tools ------------------------------ */
+
+async function openVersions() {
+  if (!docRef.value) await flushSave();
+  if (!docRef.value) {
+    toast.add({ severity: 'info', summary: 'Start writing to build history', life: 2000 });
+    return;
+  }
+  if (isLocked.value) {
+    toast.add({ severity: 'info', summary: 'Version history is off for vault notes', life: 2400 });
+    return;
+  }
+  versionsDlg.value = true;
+}
+
+async function openLinks() {
+  if (!docRef.value) await flushSave();
+  linksDlg.value = true;
+}
+
+async function openSaveTemplate() {
+  await flushSave();
+  if (!docRef.value && !fields.value.content.trim() && !fields.value.title.trim()) {
+    toast.add({ severity: 'info', summary: 'Write something first', life: 1800 });
+    return;
+  }
+  if (isLocked.value) {
+    toast.add({ severity: 'info', summary: 'Vault notes cannot become templates', life: 2400 });
+    return;
+  }
+  templateName.value = fields.value.title || 'My template';
+  templateDlg.value = true;
+}
+
+async function confirmSaveTemplate() {
+  const name = templateName.value.trim();
+  if (!name) return;
+  pullContent();
+  await saveCustomTemplate({
+    name,
+    title: fields.value.title,
+    content: fields.value.content,
+    tags: fields.value.tags,
+    color: fields.value.color,
+    notebookId: fields.value.notebookId
+  });
+  templateDlg.value = false;
+  toast.add({ severity: 'success', summary: 'Template saved', life: 1800 });
+}
+
+async function duplicateCurrent() {
+  await flushSave();
+  if (!docRef.value) {
+    toast.add({ severity: 'info', summary: 'Nothing to duplicate yet', life: 1800 });
+    return;
+  }
+  try {
+    const copy = await duplicateNote(docRef.value.id);
+    toast.add({ severity: 'success', summary: 'Copy created', life: 1500 });
+    router.push({ name: 'editor', params: { id: copy.id } });
+  } catch (err) {
+    toast.add({ severity: 'error', summary: 'Duplicate failed', detail: String(err?.message || err), life: 3000 });
+  }
+}
+
+async function saveSnapshotNow() {
+  await flushSave();
+  if (!docRef.value || isLocked.value) return;
+  await snapshotNote(docRef.value, { force: true, reason: 'manual' });
+  toast.add({ severity: 'success', summary: 'Snapshot saved', life: 1600 });
+}
+
+
 /* ------------------------------ load / save ------------------------------ */
 
 let loadedId = null;
@@ -119,6 +216,11 @@ async function load() {
   loadedId = id;
   if (id === 'new') {
     loaded.value = true;
+    if (route.query.template) {
+      await applyTemplate(route.query.template);
+      return;
+    }
+    pendingContent.value = '';
     pushContent('');
     return;
   }
@@ -154,6 +256,33 @@ watch(() => route.params.id, (id) => {
     load();
   }
 });
+
+/** Apply a template to the current blank draft (also used by quick switcher). */
+async function applyTemplate(tplId) {
+  const list = await loadTemplates();
+  const tpl = findTemplate(list, String(tplId));
+  if (!tpl) return;
+  fields.value = {
+    title: tpl.title || '',
+    content: tpl.content || '',
+    color: tpl.color || '',
+    notebookId: tpl.notebookId || '',
+    tags: [...(tpl.tags || [])]
+  };
+  pendingContent.value = fields.value.content;
+  if (quill.value) {
+    pushContent(fields.value.content);
+    pendingContent.value = null;
+  }
+  if (fields.value.title || htmlToText(fields.value.content).trim()) scheduleSave();
+}
+
+watch(
+  () => route.query.template,
+  (tplId) => {
+    if (tplId && route.params.id === 'new' && !docRef.value) applyTemplate(tplId);
+  }
+);
 
 watch(vaultUnlocked, async (v) => {
   if (v && docRef.value?.locked) {
@@ -215,6 +344,14 @@ function pushContent(html) {
   if (html) q.setContents(q.clipboard.convert({ html }));
   else q.setText('');
 }
+
+// A template can arrive before the editor element is mounted — apply it then.
+watch(quill, (q) => {
+  if (!q || pendingContent.value === null) return;
+  pushContent(pendingContent.value);
+  pendingContent.value = null;
+  refreshFigureSrcs();
+});
 
 const scheduleSave = debounce(() => flushSave(), 700);
 
@@ -582,6 +719,55 @@ async function exportNote(kind) {
   }
 }
 
+function jumpToHeading(index) {
+  const q = quill.value;
+  if (!q) return;
+  const el = q.root.querySelectorAll('h1, h2, h3')[index];
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  try {
+    const blot = q.scroll.find(el);
+    if (blot) q.setSelection(q.getIndex(blot), 0);
+  } catch {
+    /* selection is a nicety */
+  }
+  outlineOpen.value = false;
+}
+
+function insertTextAtCursor(text) {
+  const q = quill.value;
+  if (!q) return;
+  const index = q.getSelection(true)?.index ?? q.getLength();
+  q.insertText(index, text);
+  q.setSelection(index + text.length, 0);
+  scheduleSave();
+}
+
+function insertWikiLink(title) {
+  insertTextAtCursor(`[[${title}]] `);
+  toast.add({ severity: 'success', summary: `Linked to “${title}”`, life: 1600 });
+}
+
+async function openLinkedNote(id) {
+  await flushSave();
+  router.push({ name: 'editor', params: { id } });
+}
+
+async function createLinkedNote(title) {
+  await flushSave();
+  const doc = await createNote({ title });
+  router.push({ name: 'editor', params: { id: doc.id } });
+}
+
+async function onVersionRestored(doc) {
+  if (!doc) return;
+  docRef.value = doc;
+  fields.value = await readNoteFields(doc);
+  await nextTick();
+  pushContent(fields.value.content);
+  refreshFigureSrcs();
+}
+
 async function back() {
   await flushSave();
   router.back();
@@ -635,9 +821,10 @@ async function back() {
         <button class="icon-btn" :class="{ accent: isLocked }" @click="onLockToggle">
           <i :class="['pi', isLocked ? 'pi-lock' : 'pi-lock-open']"></i>
         </button>
+        <button class="icon-btn qs-btn" title="Quick switcher" @click="openPalette"><i class="pi pi-bolt"></i></button>
         <button class="icon-btn" @click="overflow?.toggle($event)"><i class="pi pi-ellipsis-v"></i></button>
         <Popover ref="overflow">
-          <Menu :model="overflowItems" class="border-none" />
+          <Menu :model="overflowItems" class="border-none" style="max-height: 70vh; overflow-y: auto" />
         </Popover>
       </header>
 
@@ -702,7 +889,10 @@ async function back() {
         <button class="icon-btn" style="width: 34px; height: 34px" title="Record audio" @click="startRecording"><i class="pi pi-microphone"></i></button>
         <button class="icon-btn" style="width: 34px; height: 34px" title="Attach file" @click="attachFiles"><i class="pi pi-paperclip"></i></button>
         <span class="spacer"></span>
-        <span>{{ words }} words</span>
+        <span>{{ words }} words · {{ readMin }} min</span>
+        <button class="icon-btn" style="width: 34px; height: 34px" title="Outline" @click="outlineOpen = true">
+          <i class="pi pi-align-left"></i>
+        </button>
         <button class="icon-btn" style="width: 34px; height: 34px" @click="detailsDlg = true"><i class="pi pi-palette"></i></button>
       </div>
     </template>
@@ -722,6 +912,52 @@ async function back() {
     <NotebookDialog v-model:visible="notebookDlg" v-model="fields.notebookId" @update:model-value="scheduleSave" />
     <TagsDialog v-model:visible="tagsDlg" v-model="fields.tags" @update:model-value="scheduleSave" />
     <ReminderDialog v-model:visible="reminderDlg" :model-value="reminderAt" @update:model-value="onReminderChange" />
+    <VersionsDialog v-model:visible="versionsDlg" :doc="docRef" @restored="onVersionRestored" />
+    <LinksDialog
+      v-model:visible="linksDlg"
+      :doc="docRef"
+      @open="openLinkedNote"
+      @insert="insertWikiLink"
+      @create="createLinkedNote"
+    />
+
+    <Drawer v-model:visible="outlineOpen" position="right" header="Outline" :style="{ width: '290px' }">
+      <div v-if="!outline.length" class="outline-empty">
+        <i class="pi pi-align-left"></i>
+        <span>Add H1 or H2 headings to build an outline of this note.</span>
+      </div>
+      <nav v-else class="outline-list">
+        <button
+          v-for="h in outline"
+          :key="`${h.index}-${h.text}`"
+          class="outline-item"
+          :class="`level-${h.level}`"
+          @click="jumpToHeading(h.index)"
+        >
+          <span class="outline-mark">{{ h.level }}</span>
+          <span class="outline-text">{{ h.text }}</span>
+        </button>
+      </nav>
+    </Drawer>
+
+    <Dialog v-model:visible="templateDlg" modal header="Save as template" :style="{ width: '400px', maxWidth: '92vw' }">
+      <p class="muted" style="font-size: 13px; line-height: 1.5; margin: 0 0 12px">
+        Templates keep the title, content, tags and color. Pick it later from the quick switcher
+        (Ctrl/⌘ K) or when starting a note.
+      </p>
+      <InputText
+        v-model="templateName"
+        placeholder="Template name"
+        style="width: 100%"
+        maxlength="60"
+        autofocus
+        @keyup.enter="confirmSaveTemplate"
+      />
+      <template #footer>
+        <Button label="Cancel" text severity="secondary" @click="templateDlg = false" />
+        <Button label="Save template" icon="pi pi-bookmark" @click="confirmSaveTemplate" />
+      </template>
+    </Dialog>
 
     <Dialog v-model:visible="detailsDlg" modal header="Note details" :style="{ width: '400px', maxWidth: '92vw' }">
       <div class="settings-group" style="margin-bottom: 10px">
@@ -756,7 +992,7 @@ async function back() {
       <div class="muted" style="font-size: 12.5px; line-height: 1.8">
         <div v-if="docRef">Created: {{ fullDate(docRef.created) }}</div>
         <div v-if="docRef">Modified: {{ fullDate(docRef.updated) }}</div>
-        <div>{{ words }} words · {{ (docRef?.atts || []).length }} attachments</div>
+        <div>{{ words }} words · {{ readMin }} min read · {{ (docRef?.atts || []).length }} attachments</div>
       </div>
     </Dialog>
 
@@ -780,5 +1016,69 @@ async function back() {
 .color-dot.active {
   border-color: var(--ink-text);
   box-shadow: 0 0 0 3px var(--ink-accent-soft);
+}
+.outline-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 48px 20px;
+  text-align: center;
+  color: var(--ink-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.outline-empty i {
+  font-size: 24px;
+  opacity: 0.6;
+}
+.outline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.outline-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: none;
+  background: transparent;
+  color: var(--ink-text);
+  text-align: left;
+  padding: 9px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 13.5px;
+}
+.outline-item:active {
+  background: var(--ink-surface-2);
+}
+.outline-item.level-2 {
+  padding-left: 26px;
+  font-size: 12.5px;
+  color: var(--ink-text-muted);
+}
+.outline-item.level-3 {
+  padding-left: 42px;
+  font-size: 12px;
+  color: var(--ink-text-muted);
+}
+.outline-mark {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--ink-accent-soft);
+  color: var(--ink-accent);
+  font-size: 9.5px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.outline-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

@@ -8,7 +8,8 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { createRxDatabase } from 'rxdb';
 import { addRxPlugin } from 'rxdb';
 import { RxDBAttachmentsPlugin } from 'rxdb/plugins/attachments';
-import { noteSchema, notebookSchema, settingsSchema } from '../src/db/schema.js';
+import { RxDBQueryBuilderPlugin } from 'rxdb/plugins/query-builder';
+import { noteSchema, notebookSchema, settingsSchema, revisionSchema } from '../src/db/schema.js';
 import { htmlToText } from '../src/utils/format.js';
 
 let failures = 0;
@@ -21,6 +22,7 @@ function check(name, cond) {
 }
 
 addRxPlugin(RxDBAttachmentsPlugin);
+addRxPlugin(RxDBQueryBuilderPlugin);
 const storage = getRxStorageMemory();
 
 const db = await createRxDatabase({
@@ -31,7 +33,8 @@ const db = await createRxDatabase({
 await db.addCollections({
   notes: { schema: noteSchema },
   notebooks: { schema: notebookSchema },
-  settings: { schema: settingsSchema }
+  settings: { schema: settingsSchema },
+  revisions: { schema: revisionSchema }
 });
 
 console.log('— schema + inserts');
@@ -83,6 +86,31 @@ check('trash query', trashed.length === 1);
 const fresh2 = await db.notes.findOne('n1').exec();
 await fresh2.incrementalRemove(); // cascades attachments
 check('purge', (await db.notes.findOne('n1').exec()) === null);
+
+console.log('— version history collection');
+await db.revisions.insert({
+  id: 'rev1',
+  noteId: 'n2',
+  title: 'Second',
+  content: '<p>old</p>',
+  contentText: 'old',
+  created: now,
+  reason: 'edit'
+});
+await db.revisions.insert({
+  id: 'rev2',
+  noteId: 'n2',
+  title: 'Second',
+  content: '<p>newer</p>',
+  contentText: 'newer',
+  created: now + 10,
+  reason: 'edit'
+});
+const revs = await db.revisions
+  .find({ selector: { noteId: 'n2' }, sort: [{ created: 'desc' }] })
+  .exec();
+check('revisions stored per note', revs.length === 2 && revs[0].id === 'rev2');
+check('revision content preserved', revs[1].content.includes('old'));
 
 console.log('— vault crypto (WebCrypto AES-GCM + PBKDF2)');
 const subtle = globalThis.crypto.subtle;

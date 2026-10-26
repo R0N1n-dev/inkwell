@@ -13,8 +13,18 @@ defineEmits(['action', 'close']);
     <button class="icon-btn" title="Lock in vault" @click="$emit('action', 'lock')">
       <i class="pi pi-shield"></i>
     </button>
+    <button class="icon-btn" title="Duplicate" @click="$emit('action', 'duplicate')"><i class="pi pi-copy"></i></button>
+    <button class="icon-btn" title="Merge into one note" @click="$emit('action', 'merge')"><i class="pi pi-objects-column"></i></button>
     <button class="icon-btn" title="Delete" style="color: #e5484d" @click="$emit('action', 'trash')">
       <i class="pi pi-trash"></i>
     </button>
   </div>
 </template>
+
+<style scoped>
+.selection-bar .icon-btn {
+  width: 34px;
+  height: 34px;
+  font-size: 15px;
+}
+</style>

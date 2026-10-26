@@ -61,6 +61,28 @@ export const noteSchema = {
   indexes: ['updated', 'created', 'notebookId', 'reminderAt']
 };
 
+/**
+ * Version history snapshots. One row per captured revision of a note's
+ * editable payload; pruning keeps the newest `MAX_PER_NOTE` per note.
+ */
+export const revisionSchema = {
+  version: 0,
+  primaryKey: 'id',
+  type: 'object',
+  properties: {
+    id: { type: 'string', maxLength: 64 },
+    noteId: { type: 'string', maxLength: 64 },
+    title: { type: 'string', default: '' },
+    content: { type: 'string', default: '' },
+    contentText: { type: 'string', default: '' },
+    created: { type: 'number', minimum: 0, maximum: 10000000000000, multipleOf: 1 },
+    /** 'edit' | 'restore' | 'manual' */
+    reason: { type: 'string', default: 'edit' }
+  },
+  required: ['id', 'noteId', 'created'],
+  indexes: ['noteId', 'created']
+};
+
 export const notebookSchema = {
   version: 0,
   primaryKey: 'id',

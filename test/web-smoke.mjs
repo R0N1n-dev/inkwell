@@ -83,8 +83,11 @@ async function main() {
   check('snippet rendered', cardText.includes('headless smoke'));
 
   console.log('— search');
-  const searchBtns = await page.$$('.app-topbar .icon-btn');
-  await searchBtns[searchBtns.length - 2].click(); // search icon
+  await page.evaluate(() => {
+    [...document.querySelectorAll('.app-topbar .icon-btn')]
+      .find((button) => button.querySelector('.pi-search'))
+      ?.click();
+  });
   await wait(400);
   await page.type('.search-input', 'smoke', { delay: 10 });
   await wait(500);

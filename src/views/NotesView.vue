@@ -15,10 +15,14 @@ import {
   purgeNote,
   togglePin,
   toggleFavorite,
-  lockNote
+  lockNote,
+  duplicateNote,
+  mergeNotes
 } from '../db/notes.js';
 import { getSetting, setSetting } from '../db/settings.js';
 import { vaultUnlocked } from '../crypto/vault.js';
+import { openPalette } from '../composables/usePalette.js';
+import { addSavedSearch } from '../composables/useSavedSearches.js';
 
 defineOptions({ name: 'NotesView' });
 
@@ -31,8 +35,8 @@ const filters = ref({});
 const { list, reload } = useNotesQuery(filters);
 const notebooks = useNotebooks();
 
-const searching = ref(false);
-const term = ref('');
+const searching = ref(!!route.query.q);
+const term = ref(route.query.q || '');
 const viewMode = ref('list');
 const sortBy = ref('updated');
 
@@ -58,14 +62,19 @@ function applyFilters() {
 }
 
 watch(
-  () => [route.query, sortBy.value],
-  () => {
+  () => route.query,
+  (q) => {
+    if (q.sort && q.sort !== sortBy.value) sortBy.value = q.sort;
+    term.value = q.q || '';
+    searching.value = !!q.q;
     applyFilters();
     selectionMode.value = false;
     selected.value = new Set();
   },
   { immediate: true, deep: true }
 );
+
+watch(sortBy, () => applyFilters());
 
 (async () => {
   viewMode.value = await getSetting('viewMode', 'list');
@@ -154,6 +163,33 @@ async function doUndo() {
 
 async function bulk(action) {
   const ids = [...selected.value];
+  if (action === 'merge') {
+    if (ids.length < 2) {
+      toast.add({ severity: 'info', summary: 'Select at least two notes to merge', life: 2200 });
+      return;
+    }
+    try {
+      const merged = await mergeNotes(ids);
+      selectionMode.value = false;
+      selected.value = new Set();
+      toast.add({ severity: 'success', summary: 'Merged into a new note', life: 1800 });
+      router.push({ name: 'editor', params: { id: merged.id } });
+    } catch (err) {
+      toast.add({ severity: 'error', summary: 'Merge failed', detail: String(err?.message || err), life: 3000 });
+    }
+    return;
+  }
+  if (action === 'duplicate') {
+    try {
+      for (const id of ids) await duplicateNote(id);
+      selectionMode.value = false;
+      selected.value = new Set();
+      toast.add({ severity: 'success', summary: `Duplicated ${ids.length} note(s)`, life: 1800 });
+    } catch (err) {
+      toast.add({ severity: 'error', summary: 'Duplicate failed', detail: String(err?.message || err), life: 3000 });
+    }
+    return;
+  }
   for (const id of ids) {
     if (action === 'trash') await trashNote(id);
     if (action === 'archive') await setArchived(id, true);
@@ -196,8 +232,32 @@ const menuItems = computed(() => [
     label: viewMode.value === 'list' ? 'Grid view' : 'List view',
     icon: viewMode.value === 'list' ? 'pi pi-table' : 'pi pi-list',
     command: toggleView
-  }
+  },
+  { separator: true },
+  { label: 'Save this view', icon: 'pi pi-bookmark', command: saveCurrentSearch },
+  { label: 'Quick switcher', icon: 'pi pi-bolt', command: openPalette }
 ]);
+
+async function saveCurrentSearch() {
+  const q = route.query;
+  const query = {
+    q: term.value.trim(),
+    tag: q.tag || '',
+    notebook: q.notebook || '',
+    fav: q.fav || '',
+    archived: q.archived || '',
+    sort: sortBy.value === 'updated' ? '' : sortBy.value
+  };
+  if (!query.q && !query.tag && !query.notebook && !query.fav && !query.archived) {
+    toast.add({ severity: 'info', summary: 'Nothing to save', detail: 'Search or filter notes first.', life: 2400 });
+    return;
+  }
+  const fallback = query.q || (query.tag ? `#${query.tag}` : 'My view');
+  const name = window.prompt('Name this view', fallback);
+  if (!name) return;
+  await addSavedSearch(name, query);
+  toast.add({ severity: 'success', summary: 'View saved to the sidebar', life: 2000 });
+}
 
 async function setSort(key) {
   sortBy.value = key;
@@ -226,6 +286,7 @@ async function toggleView() {
           <div v-if="!selectionMode" class="subtitle">{{ shown.length }} note{{ shown.length === 1 ? '' : 's' }}</div>
         </div>
         <button class="icon-btn" @click="searching = true"><i class="pi pi-search"></i></button>
+        <button class="icon-btn qs-btn" title="Quick switcher" @click="openPalette"><i class="pi pi-bolt"></i></button>
         <button class="icon-btn" @click="optionsMenu?.toggle($event)">
           <i class="pi pi-ellipsis-v"></i>
         </button>
@@ -238,8 +299,11 @@ async function toggleView() {
         placeholder="Search notes, tags…"
         autofocus
       />
+      <button v-if="searching" class="icon-btn" title="View options" @click="optionsMenu?.toggle($event)">
+        <i class="pi pi-ellipsis-v"></i>
+      </button>
       <Popover ref="optionsMenu">
-        <Menu :model="menuItems" class="border-none" />
+        <Menu :model="menuItems" class="border-none" style="max-height: 70vh; overflow-y: auto" />
       </Popover>
     </header>
 

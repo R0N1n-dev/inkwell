@@ -1,6 +1,7 @@
 import { getDB, uid } from './database.js';
 import { htmlToText } from '../utils/format.js';
 import { encryptPayload, decryptPayload, vaultUnlocked } from '../crypto/vault.js';
+import { snapshotNote, purgeRevisions } from './revisions.js';
 
 /* ------------------------------------------------------------------ */
 /* Notes CRUD                                                          */
@@ -62,6 +63,11 @@ export async function saveNote(id, patch) {
   if (patch.content !== undefined && patch.contentText === undefined) {
     clean.contentText = htmlToText(patch.content);
   }
+  // Capture the pre-edit state for version history (throttled inside).
+  const contentChanged =
+    (patch.title !== undefined && patch.title !== doc.title) ||
+    (patch.content !== undefined && patch.content !== doc.content);
+  if (contentChanged) await snapshotNote(doc);
   await doc.incrementalPatch(clean);
   return doc;
 }
@@ -118,6 +124,7 @@ export async function purgeNote(id) {
   if (!doc) return;
   const fresh = (await db.notes.findOne(id).exec()) || doc;
   await fresh.incrementalRemove(); // attachments are removed together with the document
+  await purgeRevisions(id);
 }
 
 export async function emptyTrash() {
@@ -156,6 +163,133 @@ export async function toggleFavorite(id) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Duplicate / merge                                                   */
+/* ------------------------------------------------------------------ */
+
+function escapeHtml(s) {
+  return String(s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+/** Copy every attachment (binary + metadata) from one note to another. */
+async function copyAttachments(fromDoc, toDoc) {
+  const copied = [];
+  let target = toDoc;
+  for (const att of fromDoc.atts || []) {
+    try {
+      const handle = fromDoc.getAttachment(att.id);
+      if (!handle) continue;
+      const data = await handle.getDataBase64();
+      // each put returns a NEW document revision, so keep using the fresh one
+      const rxAtt = await target.putAttachmentBase64({ id: att.id, type: att.type, data });
+      target = rxAtt.doc;
+      copied.push({ ...att });
+    } catch {
+      /* unreadable attachment — skip it */
+    }
+  }
+  if (copied.length) {
+    const atts = [...(target.atts || [])];
+    for (const att of copied) {
+      if (!atts.some((existing) => existing.id === att.id)) atts.push(att);
+    }
+    await target.incrementalPatch({ atts, updated: Date.now() });
+  }
+  return copied.length;
+}
+
+/** Create a standalone copy (content, tags, notebook, color, attachments). */
+export async function duplicateNote(id) {
+  const db = await getDB();
+  const src = await db.notes.findOne(id).exec();
+  if (!src) return null;
+  if (src.locked) {
+    // Keep the copy encrypted: never turn a vault note into a plaintext note.
+    const now = Date.now();
+    const copy = await db.notes.insert({
+      id: uid('n'),
+      title: '',
+      content: '',
+      contentText: '',
+      created: now,
+      updated: now,
+      pinned: false,
+      favorite: src.favorite,
+      archived: false,
+      trashed: false,
+      deletedAt: 0,
+      locked: true,
+      cipher: src.cipher,
+      color: src.color || '',
+      notebookId: '',
+      tags: [],
+      reminderAt: 0,
+      reminderNotified: false,
+      atts: []
+    });
+    await copyAttachments(src, copy);
+    return (await db.notes.findOne(copy.id).exec()) || copy;
+  }
+  const fields = await readNoteFields(src);
+  const now = Date.now();
+  const copy = await db.notes.insert({
+    id: uid('n'),
+    title: `${fields.title || 'Untitled'} (copy)`,
+    content: fields.content || '',
+    contentText: fields.contentText || htmlToText(fields.content || ''),
+    created: now,
+    updated: now,
+    pinned: false,
+    favorite: src.favorite,
+    archived: false,
+    trashed: false,
+    deletedAt: 0,
+    locked: false,
+    cipher: '',
+    color: fields.color || '',
+    notebookId: fields.notebookId || '',
+    tags: [...(fields.tags || [])],
+    reminderAt: 0,
+    reminderNotified: false,
+    atts: []
+  });
+  await copyAttachments(src, copy);
+  return (await db.notes.findOne(copy.id).exec()) || copy;
+}
+
+/**
+ * Merge notes into a new note, non-destructively (originals stay put).
+ * Each source becomes an H1 section; attachments are copied across.
+ */
+export async function mergeNotes(ids, { title = '' } = {}) {
+  const docs = (await Promise.all(ids.map((id) => getNote(id)))).filter(Boolean);
+  if (docs.length < 2) throw new Error('pick at least two notes');
+  const db = await getDB();
+  const sections = [];
+  const tags = new Set();
+  for (const doc of docs) {
+    if (doc.locked) continue; // merge never pulls vault plaintext into a normal note
+    const fields = await readNoteFields(doc);
+    for (const t of fields.tags || []) tags.add(t);
+    sections.push(`<h1>${escapeHtml(fields.title || 'Untitled')}</h1>${fields.content || ''}`);
+  }
+  if (sections.length < 2) throw new Error('pick at least two unlocked notes');
+  const first = docs[0];
+  const merged = await createNote({
+    title: title || `Merged · ${sections.length} notes`,
+    content: sections.join('<hr>'),
+    tags: [...tags],
+    notebookId: first.notebookId || '',
+    color: first.color || ''
+  });
+  for (const doc of docs) {
+    if (doc.locked) continue;
+    const target = await db.notes.findOne(merged.id).exec();
+    if (target) await copyAttachments(doc, target);
+  }
+  return (await db.notes.findOne(merged.id).exec()) || merged;
+}
+
+/* ------------------------------------------------------------------ */
 /* Vault lock / unlock of a single note                                */
 /* ------------------------------------------------------------------ */
 
@@ -171,6 +305,8 @@ export async function lockNote(id) {
     notebookId: doc.notebookId,
     tags: [...doc.tags]
   };
+  // Plaintext history must not survive the note being moved into the vault.
+  await purgeRevisions(id);
   await doc.incrementalPatch({
     locked: true,
     cipher: await encryptPayload(payload),

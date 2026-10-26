@@ -4,7 +4,7 @@ import { RxDBQueryBuilderPlugin } from 'rxdb/plugins/query-builder';
 import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { VueRxReactivityFactory } from 'rxdb/plugins/reactivity-vue';
-import { noteSchema, notebookSchema, settingsSchema } from './schema.js';
+import { noteSchema, notebookSchema, settingsSchema, revisionSchema } from './schema.js';
 
 /**
  * Storage
@@ -43,7 +43,8 @@ async function create() {
   await db.addCollections({
     notes: { schema: noteSchema },
     notebooks: { schema: notebookSchema },
-    settings: { schema: settingsSchema }
+    settings: { schema: settingsSchema },
+    revisions: { schema: revisionSchema }
   });
 
   // One-time migration: RxDB reserves `deleted` as a document property

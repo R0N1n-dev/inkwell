@@ -1,5 +1,5 @@
 <script setup>
-import { inject, onMounted, ref } from 'vue';
+import { computed, inject, onMounted, ref } from 'vue';
 import { useToast } from 'primevue/usetoast';
 import { useConfirm } from 'primevue/useconfirm';
 import { FilePicker } from '@capawesome/capacitor-file-picker';
@@ -13,6 +13,8 @@ import { scheduleDailyReminder } from '../platform/notify.js';
 import { base64ToBytes } from '../utils/format.js';
 import { vaultConfigured, lockVault } from '../crypto/vault.js';
 import { syncWidgets } from '../platform/widgets.js';
+import { loadTemplates, deleteCustomTemplate } from '../utils/templates.js';
+import { openPalette } from '../composables/usePalette.js';
 
 const openSidebar = inject('openSidebar', () => {});
 const toast = useToast();
@@ -25,6 +27,10 @@ const lockOnBg = ref(true);
 const dailyOn = ref(false);
 const dailyHour = ref(20);
 const dailyMin = ref(0);
+const wordGoal = ref(300);
+const templates = ref([]);
+const templateDlg = ref(false);
+const customTemplates = computed(() => templates.value.filter((tpl) => tpl.id.startsWith('tpl_user_')));
 
 onMounted(async () => {
   trashDays.value = await getSetting('trashDays', 30);
@@ -34,7 +40,38 @@ onMounted(async () => {
   const t = await getSetting('dailyReminderTime', [20, 0]);
   dailyHour.value = t[0];
   dailyMin.value = t[1];
+  wordGoal.value = (await getSetting('dailyWordGoal', 300)) || 300;
+  templates.value = await loadTemplates();
 });
+
+async function saveWordGoal(v) {
+  const goal = Math.max(50, Math.min(5000, Number(v) || 300));
+  wordGoal.value = goal;
+  await setSetting('dailyWordGoal', goal);
+}
+
+async function openTemplates() {
+  templates.value = await loadTemplates();
+  templateDlg.value = true;
+}
+
+function quickSwitcher() {
+  openPalette();
+}
+
+function removeTemplate(tpl) {
+  confirm.require({
+    header: 'Delete template?',
+    message: `“${tpl.name}” will be removed. Notes created from it are untouched.`,
+    icon: 'pi pi-bookmark',
+    acceptClass: 'p-button-danger',
+    accept: async () => {
+      await deleteCustomTemplate(tpl.id);
+      templates.value = await loadTemplates();
+      toast.add({ severity: 'success', summary: 'Template deleted', life: 1500 });
+    }
+  });
+}
 
 async function pickTrashDays(v) {
   trashDays.value = v;
@@ -197,6 +234,33 @@ function wipeAll() {
       </div>
 
       <div class="settings-group">
+        <div class="settings-row">
+          <i class="pi pi-pencil"></i>
+          <span class="label">Daily word goal</span>
+          <InputNumber
+            :model-value="wordGoal"
+            :min="50"
+            :max="5000"
+            :step="50"
+            :show-buttons="false"
+            style="width: 90px"
+            @update:model-value="saveWordGoal"
+          />
+        </div>
+        <div class="settings-row" style="cursor: pointer" @click="openTemplates">
+          <i class="pi pi-bookmark"></i>
+          <span class="label">Note templates</span>
+          <span class="value">{{ customTemplates.length ? `${customTemplates.length} custom` : 'built-in' }}</span>
+          <i class="pi pi-chevron-right" style="font-size: 11px; color: var(--ink-text-muted)"></i>
+        </div>
+        <div class="settings-row" style="cursor: pointer" @click="quickSwitcher">
+          <i class="pi pi-bolt"></i>
+          <span class="label">Quick switcher</span>
+          <span class="value">Ctrl / ⌘ K</span>
+        </div>
+      </div>
+
+      <div class="settings-group">
         <div class="settings-row" style="cursor: pointer" @click="exportAll">
           <i class="pi pi-upload"></i>
           <span class="label">Export backup</span>
@@ -246,6 +310,35 @@ function wipeAll() {
         </button>
       </div>
     </Dialog>
+    <Dialog v-model:visible="templateDlg" modal header="Note templates" :style="{ width: '460px', maxWidth: '94vw' }">
+      <p class="muted" style="font-size: 12.5px; line-height: 1.5; margin: 0 0 12px">
+        Start any note from a template with the quick switcher. Built-ins stay put; templates you
+        save from a note can be deleted here.
+      </p>
+      <div class="tpl-list">
+        <div v-for="tpl in templates" :key="tpl.id" class="tpl-row">
+          <span class="tpl-icon"><i :class="tpl.icon || 'pi pi-file'"></i></span>
+          <span class="tpl-main">
+            <span class="tpl-name">{{ tpl.name }}</span>
+            <span class="tpl-desc">{{ tpl.description }}</span>
+          </span>
+          <Button
+            v-if="customTemplates.some((t) => t.id === tpl.id)"
+            icon="pi pi-trash"
+            text
+            size="small"
+            severity="danger"
+            aria-label="Delete template"
+            @click="removeTemplate(tpl)"
+          />
+          <span v-else class="tpl-builtin">built-in</span>
+        </div>
+      </div>
+      <template #footer>
+        <Button label="Done" text @click="templateDlg = false" />
+      </template>
+    </Dialog>
+
     <ConfirmDialog />
     <Toast position="bottom-center" />
   </div>
@@ -287,4 +380,60 @@ function wipeAll() {
   color: var(--ink-text-muted);
   line-height: 1.35;
 }
+.tpl-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 56vh;
+  overflow-y: auto;
+}
+.tpl-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 4px;
+  border-bottom: 1px solid var(--ink-border);
+}
+.tpl-row:last-child {
+  border-bottom: none;
+}
+.tpl-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--ink-accent-soft);
+  color: var(--ink-accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  flex: none;
+}
+.tpl-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.tpl-name {
+  font-size: 13.5px;
+  font-weight: 650;
+}
+.tpl-desc {
+  font-size: 11px;
+  color: var(--ink-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tpl-builtin {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 700;
+  color: var(--ink-text-muted);
+  background: var(--ink-surface-3);
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+
 </style>
