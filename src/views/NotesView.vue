@@ -23,6 +23,7 @@ import { getSetting, setSetting } from '../db/settings.js';
 import { vaultUnlocked } from '../crypto/vault.js';
 import { openPalette } from '../composables/usePalette.js';
 import { addSavedSearch } from '../composables/useSavedSearches.js';
+import { registerBackInterceptor } from '../composables/useBackIntercept.js';
 
 defineOptions({ name: 'NotesView' });
 
@@ -122,6 +123,25 @@ function startSelection(doc) {
   selectionMode.value = true;
   selected.value = new Set([doc.id]);
 }
+
+// Hardware back within the list: clear selection, then leave search mode.
+registerBackInterceptor(() => {
+  if (route.name !== 'notes') return false;
+  if (selectionMode.value) {
+    selectionMode.value = false;
+    selected.value = new Set();
+    return true;
+  }
+  if (searching.value) {
+    if (route.query.q) router.replace({ name: 'notes' });
+    else {
+      searching.value = false;
+      term.value = '';
+    }
+    return true;
+  }
+  return false;
+});
 
 /* ---------------- swipe actions ---------------- */
 

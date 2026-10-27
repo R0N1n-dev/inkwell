@@ -48,6 +48,21 @@ body {
   padding-bottom: var(--ink-safe-bottom);
 }
 
+/* Drawers are app surfaces, not system chrome. Keep both the panel and its
+   mask inside the status-bar / gesture-bar safe areas so they never paint
+   over the OS bars or make their icons unreadable. */
+.p-drawer-mask,
+.p-dialog-mask {
+  top: var(--ink-safe-top) !important;
+  bottom: var(--ink-safe-bottom) !important;
+  height: auto !important;
+}
+.p-drawer {
+  top: var(--ink-safe-top) !important;
+  bottom: var(--ink-safe-bottom) !important;
+  height: auto !important;
+}
+
 .app-topbar {
   display: flex;
   align-items: center;

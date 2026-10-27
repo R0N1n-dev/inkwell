@@ -88,6 +88,8 @@ Everything above works **completely offline**. There is no account, no server an
   SharedPreferences snapshot.
 - **Per-note reminders** with exact local notifications; tapping opens the note. The daily nudge
   opens today's journal.
+- **Hardware back flow**: closes overlays/search/selection first, walks back through screens, then
+  asks before exiting from All notes. Side panels and dialogs stay inside the system-bar safe areas.
 - Hardware back handling, status-bar theming, splash screen, edge-to-edge safe areas and
   keyboard resize.
 - Share text and images **into Inkwell** from any app.

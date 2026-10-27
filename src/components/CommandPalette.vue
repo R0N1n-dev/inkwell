@@ -219,7 +219,10 @@ function onKey(event) {
 <style scoped>
 .cmdk-backdrop {
   position: fixed;
-  inset: 0;
+  top: var(--ink-safe-top);
+  bottom: var(--ink-safe-bottom);
+  left: 0;
+  right: 0;
   z-index: 1300;
   background: rgba(12, 15, 24, 0.5);
   backdrop-filter: blur(6px);
@@ -397,8 +400,6 @@ kbd {
     height: 100%;
     border-radius: 0;
     border: none;
-    padding-top: var(--ink-safe-top);
-    padding-bottom: var(--ink-safe-bottom);
   }
   .cmdk-footer {
     display: none;

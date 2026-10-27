@@ -20,14 +20,17 @@ import { getOrCreateDailyNote } from './db/daily.js';
 import { dataUrlToBytes, htmlToText } from './utils/format.js';
 import { paletteOpen, openPalette, closePalette } from './composables/usePalette.js';
 import { loadSavedSearches } from './composables/useSavedSearches.js';
+import { runBackInterceptors } from './composables/useBackIntercept.js';
 
 const router = useRouter();
 const sidebarOpen = ref(false);
+const exitPromptOpen = ref(false);
 provide('sidebarOpen', sidebarOpen);
 provide('openSidebar', () => (sidebarOpen.value = true));
 provide('openPalette', openPalette);
 
 let drainActions = null;
+let backHandle = null;
 
 function routeForAction(action) {
   switch (action?.type) {
@@ -79,25 +82,110 @@ async function handleSharedMedia(action) {
   router.push({ name: 'editor', params: { id: doc.id } });
 }
 
-function initBackHandling() {
-  onBackButton(() => {
-    if (paletteOpen.value) {
-      closePalette();
-      return;
-    }
-    if (sidebarOpen.value) {
-      sidebarOpen.value = false;
-      return;
-    }
-    const name = router.currentRoute.value.name;
-    const hasQuery = Object.keys(router.currentRoute.value.query || {}).length > 0;
-    if (name && name !== 'notes' ? true : hasQuery) {
-      if (hasQuery && name === 'notes') router.push({ name: 'notes' });
-      else router.back();
-    } else {
-      exitApp();
-    }
+async function initBackHandling() {
+  backHandle = await onBackButton(handleBack);
+}
+
+/* ------------------------------------------------------------------ */
+/* Hardware back: overlays -> nested screens -> notes home -> confirm  */
+/* ------------------------------------------------------------------ */
+
+function isVisible(el) {
+  if (el.closest('[aria-hidden="true"]')) return false;
+  if (
+    typeof el.checkVisibility === 'function' &&
+    !el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })
+  ) {
+    return false;
+  }
+  const style = getComputedStyle(el);
+  const rect = el.getBoundingClientRect();
+  return (
+    style.display !== 'none' &&
+    style.visibility !== 'hidden' &&
+    style.opacity !== '0' &&
+    rect.width > 0 &&
+    rect.height > 0
+  );
+}
+
+/** Any PrimeVue dialog, drawer, popover or select/date overlay on screen? */
+function hasOpenOverlay() {
+  const selector = [
+    '.p-dialog-mask',
+    '.p-drawer-mask',
+    '.p-popover',
+    '.p-menu',
+    '.p-select-overlay',
+    '.p-datepicker-panel',
+    '.p-autocomplete-overlay'
+  ].join(',');
+  return [...document.querySelectorAll(selector)].some(isVisible);
+}
+
+/** Let PrimeVue close its own topmost overlay via its Escape handler. */
+function closeTopOverlay() {
+  const event = new KeyboardEvent('keydown', {
+    key: 'Escape',
+    code: 'Escape',
+    bubbles: true,
+    cancelable: true
   });
+  const active = document.activeElement;
+  const target = active && active !== document.body ? active : document;
+  target.dispatchEvent(event);
+}
+
+function canGoBack() {
+  return !!router.options.history.state?.back;
+}
+
+function goUp() {
+  if (canGoBack()) router.back();
+  else router.replace({ name: 'notes' });
+}
+
+function requestExit() {
+  if (!exitPromptOpen.value) exitPromptOpen.value = true;
+}
+
+async function confirmExit() {
+  exitPromptOpen.value = false;
+  await exitApp();
+}
+
+function handleBack() {
+  // An exit confirmation is already on screen: back cancels it.
+  if (exitPromptOpen.value) {
+    exitPromptOpen.value = false;
+    return;
+  }
+  if (paletteOpen.value) {
+    closePalette();
+    return;
+  }
+  if (sidebarOpen.value) {
+    sidebarOpen.value = false;
+    return;
+  }
+  if (hasOpenOverlay()) {
+    closeTopOverlay();
+    return;
+  }
+  if (runBackInterceptors()) return;
+
+  const current = router.currentRoute.value;
+  const hasQuery = Object.keys(current.query || {}).length > 0;
+
+  // Notes is home. A filtered/saved view first returns to All notes,
+  // then the next back asks before leaving the app.
+  if (current.name === 'notes') {
+    if (hasQuery) router.replace({ name: 'notes' });
+    else requestExit();
+    return;
+  }
+
+  goUp();
 }
 
 function onCmdKey(event) {
@@ -111,7 +199,7 @@ function onCmdKey(event) {
 onMounted(async () => {
   window.addEventListener('keydown', onCmdKey);
   await initPlatform();
-  initBackHandling();
+  await initBackHandling();
   loadSavedSearches().catch(() => {});
 
   await initNotifications((extra) => {
@@ -144,6 +232,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onCmdKey);
+  backHandle?.remove?.();
 });
 </script>
 
@@ -156,5 +245,47 @@ onUnmounted(() => {
     </router-view>
     <AppSidebar v-model:visible="sidebarOpen" />
     <CommandPalette />
+
+    <Dialog
+      v-model:visible="exitPromptOpen"
+      modal
+      header="Exit Inkwell?"
+      :style="{ width: '360px', maxWidth: '90vw' }"
+    >
+      <div class="exit-dialog">
+        <div class="exit-icon"><i class="pi pi-power-off"></i></div>
+        <p>Your notes are saved on this device. Exit the app?</p>
+      </div>
+      <template #footer>
+        <Button label="Stay" text severity="secondary" @click="exitPromptOpen = false" />
+        <Button label="Exit" icon="pi pi-power-off" @click="confirmExit" />
+      </template>
+    </Dialog>
   </div>
 </template>
+
+<style scoped>
+.exit-dialog {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.exit-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: var(--ink-accent-soft);
+  color: var(--ink-accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex: none;
+}
+.exit-dialog p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-text-muted);
+}
+</style>
