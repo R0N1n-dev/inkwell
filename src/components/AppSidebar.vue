@@ -4,7 +4,6 @@ import { useRouter, useRoute } from 'vue-router';
 import { useCounts, useNotebooks } from '../composables/useQueries.js';
 import { THEMES, themeId, setTheme, isDark, toggleDark } from '../composables/useTheme.js';
 import { vaultConfigured } from '../crypto/vault.js';
-import { openPalette } from '../composables/usePalette.js';
 import {
   savedSearches,
   removeSavedSearch,
@@ -68,20 +67,28 @@ function savedActive(entry) {
 </script>
 
 <template>
-  <Drawer v-model:visible="open" position="left" class="ink-drawer" :style="{ width: '290px' }">
+  <Drawer
+    v-model:visible="open"
+    position="left"
+    class="ink-drawer"
+    :show-close-icon="false"
+    :style="{ width: '290px' }"
+  >
     <div class="sidebar-brand">
       <img src="/icon.png" alt="Inkwell" />
-      <div>
+      <div class="brand-copy">
         <div class="name">INKWELL</div>
         <div class="tag">your words, your vault</div>
       </div>
       <div class="spacer"></div>
-      <button class="icon-btn" @click="openPalette(); open = false" title="Quick switcher (Ctrl/⌘ K)">
-        <i class="pi pi-bolt"></i>
-      </button>
-      <button class="icon-btn" @click="toggleDark()" :title="isDark ? 'Light mode' : 'Dark mode'">
-        <i :class="['pi', isDark ? 'pi-sun' : 'pi-moon']"></i>
-      </button>
+      <div class="brand-actions">
+        <button class="icon-btn brand-btn" @click="toggleDark()" :title="isDark ? 'Light mode' : 'Dark mode'">
+          <i :class="['pi', isDark ? 'pi-sun' : 'pi-moon']"></i>
+        </button>
+        <button class="icon-btn brand-btn" title="Close menu" aria-label="Close menu" @click="open = false">
+          <i class="pi pi-times"></i>
+        </button>
+      </div>
     </div>
 
     <nav class="sidebar-nav">
@@ -156,6 +163,36 @@ function savedActive(entry) {
 </template>
 
 <style scoped>
+.sidebar-brand {
+  padding-top: 12px;
+  padding-bottom: 8px;
+  gap: 10px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--ink-surface);
+}
+.brand-copy {
+  min-width: 0;
+}
+.brand-copy .name,
+.brand-copy .tag {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.brand-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+.brand-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  font-size: 14px;
+}
 .sidebar-today {
   background: linear-gradient(120deg, var(--ink-accent-soft), transparent);
 }

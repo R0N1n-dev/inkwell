@@ -114,7 +114,7 @@ Everything above works **completely offline**. There is no account, no server an
 | `Enter` | Open the selected note or command |
 | `Esc` | Close the switcher |
 
-On mobile, the same switcher is one tap away from the bolt icon in the note list, editor or sidebar.
+On mobile, the same switcher is one tap away from the bolt icon in the note list or editor, or from Settings → Quick switcher.
 
 ---
 

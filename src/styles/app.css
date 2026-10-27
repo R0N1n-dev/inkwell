@@ -63,6 +63,16 @@ body {
   height: auto !important;
 }
 
+/* The sidebar brings its own brand row, so drop PrimeVue's empty header and
+   the default content padding. Its content then starts flush at the status
+   bar edge instead of after a blank band. */
+.ink-drawer .p-drawer-header {
+  display: none;
+}
+.ink-drawer .p-drawer-content {
+  padding: 0;
+}
+
 .app-topbar {
   display: flex;
   align-items: center;
