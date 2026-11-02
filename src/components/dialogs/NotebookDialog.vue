@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { getDB, uid } from '../../db/database.js';
+import { uid, commitNotebook } from '../../db/database.js';
 import { useNotebooks } from '../../composables/useQueries.js';
 
 const props = defineProps({ visible: Boolean, modelValue: { type: String, default: '' } });
@@ -11,8 +11,8 @@ const newTitle = ref('');
 const showCreate = ref(false);
 const newColor = ref('#2EC4B6');
 const COLORS = ['#2EC4B6', '#3E63DD', '#8E4EC6', '#D6409F', '#E5484D', '#F76B15', '#FFC53D', '#46A758'];
-const ICONS = ['pi pi-book', 'pi pi-briefcase', 'pi pi-heart', 'pi pi-star', 'pi pi-lightbulb', 'pi pi-code', 'pi pi-plane', 'pi pi-home'];
-const newIcon = ref('pi pi-book');
+const ICONS = ['bx bx-book', 'bx bx-briefcase', 'bx bx-heart', 'bx bx-star', 'bx bx-bulb', 'bx bx-code', 'bx bx-paper-plane', 'bx bx-home'];
+const newIcon = ref('bx bx-book');
 
 const selected = computed(() => props.modelValue);
 
@@ -23,9 +23,8 @@ function pick(id) {
 
 async function create() {
   if (!newTitle.value.trim()) return;
-  const db = await getDB();
   const now = Date.now();
-  const doc = await db.notebooks.insert({
+  const doc = await commitNotebook({
     id: uid('nb'),
     title: newTitle.value.trim(),
     description: '',
@@ -47,7 +46,7 @@ async function create() {
   <Dialog v-model:visible="props.visible" modal header="Notebook" :style="{ width: '380px', maxWidth: '92vw' }">
     <div class="nb-list">
       <button class="nb-row" :class="{ active: !selected }" @click="pick('')">
-        <i class="pi pi-inbox"></i><span>No notebook</span>
+        <i class="bx bx-archive-in"></i><span>No notebook</span>
       </button>
       <button
         v-for="nb in notebooks"
@@ -58,14 +57,14 @@ async function create() {
       >
         <i :class="nb.icon" :style="{ color: nb.color }"></i>
         <span>{{ nb.title }}</span>
-        <i v-if="selected === nb.id" class="pi pi-check" style="margin-left: auto; color: var(--ink-accent)"></i>
+        <i v-if="selected === nb.id" class="bx bx-check" style="margin-left: auto; color: var(--ink-accent)"></i>
       </button>
     </div>
 
     <Divider />
 
     <template v-if="!showCreate">
-      <Button label="New notebook" icon="pi pi-plus" severity="secondary" text @click="showCreate = true" />
+      <Button label="New notebook" icon="bx bx-plus" severity="secondary" text @click="showCreate = true" />
     </template>
     <div v-else class="create-box">
       <InputText v-model="newTitle" placeholder="Notebook name" autofocus class="w-full" />
@@ -92,7 +91,7 @@ async function create() {
       </div>
       <div class="row" style="margin-top: 12px; justify-content: flex-end">
         <Button label="Cancel" text severity="secondary" @click="showCreate = false" />
-        <Button label="Create" icon="pi pi-check" @click="create" />
+        <Button label="Create" icon="bx bx-check" @click="create" />
       </div>
     </div>
   </Dialog>

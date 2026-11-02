@@ -1,4 +1,4 @@
-import { getDB, uid } from './database.js';
+import { getDB, noteList, notebookList, uid, commitNotebook } from './database.js';
 import { createNote } from './notes.js';
 import { getSetting, setSetting } from './settings.js';
 import { DAILY_CONTENT } from '../utils/templates.js';
@@ -13,16 +13,16 @@ import { dateKey, prettyDay } from '../utils/links.js';
 export const JOURNAL_NOTEBOOK = 'Journal';
 
 async function ensureJournalNotebook() {
-  const db = await getDB();
-  const found = await db.notebooks.find({ selector: { title: JOURNAL_NOTEBOOK } }).exec();
-  if (found[0]) return found[0];
+  await getDB();
+  const found = notebookList.find((n) => n.title === JOURNAL_NOTEBOOK);
+  if (found) return found;
   const now = Date.now();
-  return db.notebooks.insert({
+  return commitNotebook({
     id: uid('nb'),
     title: JOURNAL_NOTEBOOK,
     description: 'Your daily notes',
     color: '#F76B15',
-    icon: 'pi pi-sun',
+    icon: 'bx bx-sun',
     created: now,
     updated: now,
     sortIndex: now
@@ -33,24 +33,20 @@ export async function findTodaysNote() {
   const map = (await getSetting('dailyNotes', {})) || {};
   const id = map[dateKey()];
   if (!id) return null;
-  const db = await getDB();
-  const doc = await db.notes.findOne(id).exec();
-  return doc && !doc.trashed ? doc : null;
+  await getDB();
+  const note = noteList.find((n) => n.id === id);
+  return note && !note.trashed ? note : null;
 }
 
 export async function getOrCreateDailyNote() {
   const existing = await findTodaysNote();
   if (existing) return existing;
 
-  const db = await getDB();
   const journal = await ensureJournalNotebook();
   const title = prettyDay();
-  const found = await db.notes
-    .find({ selector: { notebookId: journal.id, title, trashed: false } })
-    .exec();
-  let doc = found[0];
-  if (!doc) {
-    doc = await createNote({
+  let note = noteList.find((n) => n.notebookId === journal.id && n.title === title && !n.trashed);
+  if (!note) {
+    note = await createNote({
       title,
       content: DAILY_CONTENT,
       notebookId: journal.id,
@@ -60,10 +56,10 @@ export async function getOrCreateDailyNote() {
   }
 
   const map = (await getSetting('dailyNotes', {})) || {};
-  map[dateKey()] = doc.id;
+  map[dateKey()] = note.id;
   // keep the mapping small: only the last 400 days
   const keys = Object.keys(map).sort();
   for (const k of keys.slice(0, Math.max(0, keys.length - 400))) delete map[k];
   await setSetting('dailyNotes', map);
-  return doc;
+  return note;
 }

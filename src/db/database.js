@@ -1,68 +1,51 @@
-import { createRxDatabase, addRxPlugin } from 'rxdb';
-import { RxDBAttachmentsPlugin } from 'rxdb/plugins/attachments';
-import { RxDBQueryBuilderPlugin } from 'rxdb/plugins/query-builder';
-import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
-import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import { VueRxReactivityFactory } from 'rxdb/plugins/reactivity-vue';
-import { noteSchema, notebookSchema, settingsSchema, revisionSchema } from './schema.js';
+import Dexie from 'dexie';
+import { reactive, ref } from 'vue';
 
 /**
  * Storage
  * -------
- * Inkwell persists everything through RxDB's Dexie storage (IndexedDB).
- * On Android the Capacitor WebView implements IndexedDB on top of SQLite
- * inside the app's private data directory, so notes, attachments and
- * settings are fully offline and private — no server, no cloud.
+ * Everything is persisted with Dexie over IndexedDB. On Android the Capacitor
+ * WebView backs IndexedDB with SQLite inside the app's private data directory,
+ * so notes, attachments and settings stay fully offline and private.
+ *
+ * Reads are served from two in-memory arrays (`noteList`, `notebookList`) that
+ * are loaded once at boot and kept in sync by every write. That keeps the app
+ * reactive without a query engine: a list view is a computed filter over
+ * `noteList`, so adding a note shows up everywhere at once.
  */
+export const noteList = reactive([]);
+export const notebookList = reactive([]);
+
+/** Bumped on every write so callers (widgets) can react to changes. */
+export const dataVersion = ref(0);
+
 let dbPromise = null;
 
-async function create() {
-  addRxPlugin(RxDBAttachmentsPlugin);
-  addRxPlugin(RxDBQueryBuilderPlugin);
+export function getDB() {
+  if (!dbPromise) dbPromise = open();
+  return dbPromise;
+}
 
-  // dev-mode gives full error messages and tolerates Vite HMR re-creating
-  // the database; it must never ship in production builds (RxDB error DB9)
-  const isDev = !!import.meta.env?.DEV;
-  if (isDev) {
-    const { RxDBDevModePlugin } = await import('rxdb/plugins/dev-mode');
-    addRxPlugin(RxDBDevModePlugin);
-  }
-
-  const db = await createRxDatabase({
-    name: 'inkwell',
-    // dev-mode requires a schema-validating storage (RxDB error DVM1);
-    // keep production storage plain to avoid the validation overhead.
-    storage: isDev
-      ? wrappedValidateAjvStorage({ storage: getRxStorageDexie() })
-      : getRxStorageDexie(),
-    reactivity: VueRxReactivityFactory,
-    multiInstance: false,
-    allowSlowCount: true,
-    ignoreDuplicate: isDev
+async function open() {
+  const db = new Dexie('inkwell');
+  db.version(1).stores({
+    notes: 'id, updated, created, notebookId, trashed, locked, pinned, archived, favorite, reminderAt',
+    notebooks: 'id, sortIndex, updated',
+    settings: 'key',
+    revisions: 'id, noteId, created',
+    attachments: 'key, noteId'
   });
-  await db.addCollections({
-    notes: { schema: noteSchema },
-    notebooks: { schema: notebookSchema },
-    settings: { schema: settingsSchema },
-    revisions: { schema: revisionSchema }
-  });
+  await db.open();
 
-  // One-time migration: RxDB reserves `deleted` as a document property
-  // (RxDB error SC17), so the soft-delete flag is stored under `trashed`.
-  // Backfill any docs that were written with the legacy `deleted` field.
-  const legacyNotes = await db.notes.find().exec();
-  for (const n of legacyNotes) {
-    if (n.trashed === undefined && n.deleted !== undefined) {
-      await n.incrementalPatch({ trashed: n.deleted === true });
-    }
-  }
-
+  const [notes, notebooks] = await Promise.all([db.notes.toArray(), db.notebooks.toArray()]);
+  noteList.splice(0, noteList.length, ...notes.map((n) => reactive(n)));
+  notebookList.splice(0, notebookList.length, ...notebooks.map((n) => reactive(n)));
   return db;
 }
 
-export function getDB() {
-  if (!dbPromise) dbPromise = create();
-  return dbPromise;
+/** Plain, structured-cloneable copy — reactive proxies cannot be stored. */
+export function plain(value) {
+  return JSON.parse(JSON.stringify(value));
 }
 
 export function uid(prefix = 'n') {
@@ -71,4 +54,59 @@ export function uid(prefix = 'n') {
     ? c.randomUUID().replace(/-/g, '')
     : Math.random().toString(36).slice(2) + Date.now().toString(36);
   return `${prefix}_${raw}`;
+}
+
+/**
+ * Put a note in the list, keeping the existing reactive object when there is
+ * one so component references (editor, cards) stay valid.
+ */
+export function indexNote(note) {
+  const next = plain(note);
+  const existing = noteList.find((n) => n.id === next.id);
+  if (existing) {
+    for (const key of Object.keys(existing)) {
+      if (!(key in next)) delete existing[key];
+    }
+    Object.assign(existing, next);
+    return existing;
+  }
+  const created = reactive(next);
+  noteList.push(created);
+  return created;
+}
+
+/** Persist a note and update the in-memory list. */
+export async function commitNote(note) {
+  const db = await getDB();
+  const next = plain(note);
+  await db.notes.put(next);
+  dataVersion.value++;
+  return indexNote(next);
+}
+
+export async function dropNote(id) {
+  const db = await getDB();
+  await db.notes.delete(id);
+  const i = noteList.findIndex((n) => n.id === id);
+  if (i >= 0) noteList.splice(i, 1);
+  dataVersion.value++;
+}
+
+export async function commitNotebook(notebook) {
+  const db = await getDB();
+  const next = plain(notebook);
+  await db.notebooks.put(next);
+  const existing = notebookList.find((n) => n.id === next.id);
+  if (existing) Object.assign(existing, next);
+  else notebookList.push(reactive(next));
+  dataVersion.value++;
+  return existing || notebookList[notebookList.length - 1];
+}
+
+export async function dropNotebook(id) {
+  const db = await getDB();
+  await db.notebooks.delete(id);
+  const i = notebookList.findIndex((n) => n.id === id);
+  if (i >= 0) notebookList.splice(i, 1);
+  dataVersion.value++;
 }

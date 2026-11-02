@@ -147,6 +147,32 @@ public class InkwellBridgePlugin extends Plugin {
         call.resolve(ret);
     }
 
+    /** Notes captured from the widget, still waiting to be imported. */
+    @PluginMethod()
+    public void getQuickCaptures(PluginCall call) {
+        JSArray arr = new JSArray();
+        org.json.JSONArray captures = WidgetStore.readCaptures(getContext());
+        for (int i = 0; i < captures.length(); i++) {
+            JSONObject c = captures.optJSONObject(i);
+            if (c == null) continue;
+            JSObject item = new JSObject();
+            item.put("ts", c.optLong("ts", 0));
+            item.put("text", c.optString("text", ""));
+            item.put("pinned", c.optBoolean("pinned", false));
+            arr.put(item);
+        }
+        JSObject ret = new JSObject();
+        ret.put("captures", arr);
+        call.resolve(ret);
+    }
+
+    /** Called once every queued capture has been written to the local database. */
+    @PluginMethod()
+    public void clearQuickCaptures(PluginCall call) {
+        WidgetStore.clearCaptures(getContext());
+        call.resolve();
+    }
+
     @PluginMethod()
     public void syncWidgetData(PluginCall call) {
         String json = call.getString("json", "{}");

@@ -26,16 +26,16 @@ const open = computed({
 });
 
 const items = computed(() => [
-  { label: 'All notes', icon: 'pi pi-notebook', to: '/notes', count: counts.value.notes, match: () => route.name === 'notes' && !route.query.fav && !route.query.archived && !route.query.tag && !route.query.notebook && !route.query.q },
-  { label: 'Favorites', icon: 'pi pi-heart', to: '/notes?fav=1', count: counts.value.favorites, match: () => route.query.fav === '1' },
-  { label: 'Tasks', icon: 'pi pi-check-square', to: '/tasks', count: null, match: () => route.name === 'tasks' },
-  { label: 'Insights', icon: 'pi pi-chart-bar', to: '/insights', count: null, match: () => route.name === 'insights' },
-  { label: 'Notebooks', icon: 'pi pi-folder', to: '/notebooks', count: counts.value.notebooks, match: () => route.name === 'notebooks' },
-  { label: 'Tags', icon: 'pi pi-tags', to: '/tags', count: null, match: () => route.name === 'tags' },
-  { label: 'Archive', icon: 'pi pi-box', to: '/notes?archived=1', count: counts.value.archived, match: () => route.query.archived === '1' },
-  { label: 'Trash', icon: 'pi pi-trash', to: '/trash', count: counts.value.trash, match: () => route.name === 'trash' },
-  { label: 'Vault', icon: 'pi pi-shield', to: '/vault', count: vaultConfigured.value ? counts.value.vault : null, match: () => route.name === 'vault' },
-  { label: 'Settings', icon: 'pi pi-cog', to: '/settings', count: null, match: () => route.name === 'settings' }
+  { label: 'All notes', icon: 'bx bx-notepad', to: '/notes', count: counts.value.notes, match: () => route.name === 'notes' && !route.query.fav && !route.query.archived && !route.query.tag && !route.query.notebook && !route.query.q },
+  { label: 'Favorites', icon: 'bx bx-heart', to: '/notes?fav=1', count: counts.value.favorites, match: () => route.query.fav === '1' },
+  { label: 'Tasks', icon: 'bx bx-check-square', to: '/tasks', count: null, match: () => route.name === 'tasks' },
+  { label: 'Insights', icon: 'bx bx-bar-chart', to: '/insights', count: null, match: () => route.name === 'insights' },
+  { label: 'Notebooks', icon: 'bx bx-folder', to: '/notebooks', count: counts.value.notebooks, match: () => route.name === 'notebooks' },
+  { label: 'Tags', icon: 'bx bx-purchase-tag', to: '/tags', count: null, match: () => route.name === 'tags' },
+  { label: 'Archive', icon: 'bx bx-archive', to: '/notes?archived=1', count: counts.value.archived, match: () => route.query.archived === '1' },
+  { label: 'Trash', icon: 'bx bx-trash', to: '/trash', count: counts.value.trash, match: () => route.name === 'trash' },
+  { label: 'Vault', icon: 'bx bx-shield', to: '/vault', count: vaultConfigured.value ? counts.value.vault : null, match: () => route.name === 'vault' },
+  { label: 'Settings', icon: 'bx bx-cog', to: '/settings', count: null, match: () => route.name === 'settings' }
 ]);
 
 function go(to) {
@@ -83,17 +83,17 @@ function savedActive(entry) {
       <div class="spacer"></div>
       <div class="brand-actions">
         <button class="icon-btn brand-btn" @click="toggleDark()" :title="isDark ? 'Light mode' : 'Dark mode'">
-          <i :class="['pi', isDark ? 'pi-sun' : 'pi-moon']"></i>
+          <i :class="['bx', isDark ? 'bx-sun' : 'bx-moon']"></i>
         </button>
         <button class="icon-btn brand-btn" title="Close menu" aria-label="Close menu" @click="open = false">
-          <i class="pi pi-times"></i>
+          <i class="bx bx-x"></i>
         </button>
       </div>
     </div>
 
     <nav class="sidebar-nav">
       <button class="sidebar-item sidebar-today" @click="openToday">
-        <i class="pi pi-sun"></i>
+        <i class="bx bx-sun"></i>
         <span>Today's journal</span>
         <span class="count">daily</span>
       </button>
@@ -119,7 +119,7 @@ function savedActive(entry) {
         :class="{ active: route.query.notebook === nb.id }"
         @click="go(`/notes?notebook=${nb.id}`)"
       >
-        <i :class="nb.icon || 'pi pi-book'" :style="nb.color ? { color: nb.color } : {}"></i>
+        <i :class="nb.icon || 'bx bx-book'" :style="nb.color ? { color: nb.color } : {}"></i>
         <span>{{ nb.title }}</span>
       </button>
     </nav>
@@ -137,10 +137,10 @@ function savedActive(entry) {
           @click="openSaved(s)"
           @keydown.enter="openSaved(s)"
         >
-          <i class="pi pi-bookmark"></i>
+          <i class="bx bx-bookmark"></i>
           <span class="saved-name">{{ s.name }}<span class="saved-query">{{ savedSearchLabel(s) }}</span></span>
           <button class="saved-del" title="Remove saved search" @click.stop="forgetSaved(s)">
-            <i class="pi pi-times"></i>
+            <i class="bx bx-x"></i>
           </button>
         </div>
       </nav>
@@ -164,7 +164,9 @@ function savedActive(entry) {
 
 <style scoped>
 .sidebar-brand {
-  padding-top: 12px;
+  /* Full-bleed drawer: the panel starts at the very top of the screen, so the
+     brand row itself owns the status-bar inset. */
+  padding-top: calc(var(--ink-safe-top) + 12px);
   padding-bottom: 8px;
   gap: 10px;
   position: sticky;

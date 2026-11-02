@@ -16,6 +16,7 @@ import {
   getNote,
   createNote,
   saveNote,
+  updateNote,
   readNoteFields,
   trashNote,
   togglePin,
@@ -100,29 +101,29 @@ const files = computed(() => {
 });
 
 const overflowItems = computed(() => [
-  { label: 'Note details', icon: 'pi pi-info-circle', command: () => (detailsDlg.value = true) },
-  { label: 'Outline', icon: 'pi pi-align-left', command: () => (outlineOpen.value = true) },
-  { label: wikiLinks.value ? `Links & backlinks (${wikiLinks.value})` : 'Links & backlinks', icon: 'pi pi-link', command: openLinks },
-  { label: 'Quick switcher', icon: 'pi pi-bolt', command: openPalette },
-  { label: 'Version history', icon: 'pi pi-history', command: openVersions },
-  { label: 'Save version snapshot', icon: 'pi pi-camera', command: saveSnapshotNow },
-  { label: 'Save as template', icon: 'pi pi-bookmark', command: openSaveTemplate },
-  { label: 'Duplicate note', icon: 'pi pi-copy', command: duplicateCurrent },
+  { label: 'Note details', icon: 'bx bx-info-circle', command: () => (detailsDlg.value = true) },
+  { label: 'Outline', icon: 'bx bx-align-left', command: () => (outlineOpen.value = true) },
+  { label: wikiLinks.value ? `Links & backlinks (${wikiLinks.value})` : 'Links & backlinks', icon: 'bx bx-link', command: openLinks },
+  { label: 'Quick switcher', icon: 'bx bx-bolt-circle', command: openPalette },
+  { label: 'Version history', icon: 'bx bx-history', command: openVersions },
+  { label: 'Save version snapshot', icon: 'bx bx-camera', command: saveSnapshotNow },
+  { label: 'Save as template', icon: 'bx bx-bookmark', command: openSaveTemplate },
+  { label: 'Duplicate note', icon: 'bx bx-copy', command: duplicateCurrent },
   { separator: true },
-  { label: 'Share', icon: 'pi pi-share-alt', command: share },
-  { label: 'Export Markdown', icon: 'pi pi-file-export', command: () => exportNote('md') },
-  { label: 'Import Markdown', icon: 'pi pi-file-import', command: importMarkdown },
-  { label: 'Export HTML', icon: 'pi pi-file', command: () => exportNote('html') },
-  { label: 'Copy text', icon: 'pi pi-copy', command: copyText },
+  { label: 'Share', icon: 'bx bx-share-alt', command: share },
+  { label: 'Export Markdown', icon: 'bx bx-export', command: () => exportNote('md') },
+  { label: 'Import Markdown', icon: 'bx bx-import', command: importMarkdown },
+  { label: 'Export HTML', icon: 'bx bx-file', command: () => exportNote('html') },
+  { label: 'Copy text', icon: 'bx bx-copy', command: copyText },
   { separator: true },
   {
     label: 'Move to trash',
-    icon: 'pi pi-trash',
+    icon: 'bx bx-trash',
     command: () =>
       confirm.require({
         header: 'Delete note?',
         message: 'It will stay in Trash for 30 days.',
-        icon: 'pi pi-trash',
+        icon: 'bx bx-trash',
         accept: async () => {
           if (docRef.value) {
             await trashNote(docRef.value.id);
@@ -358,20 +359,30 @@ const scheduleSave = debounce(() => flushSave(), 700);
 async function flushSave() {
   pullContent();
   const f = fields.value;
+  const payload = {
+    title: f.title,
+    content: f.content,
+    color: f.color,
+    notebookId: f.notebookId,
+    tags: [...(f.tags || [])]
+  };
   const emptyDraft =
-    !docRef.value && !f.title.trim() && !htmlToText(f.content).trim() && route.params.id === 'new';
+    !docRef.value &&
+    !payload.title.trim() &&
+    !htmlToText(payload.content).trim() &&
+    route.params.id === 'new';
   if (emptyDraft) return;
   saving.value = true;
   try {
     if (!docRef.value) {
-      const doc = await createNote({ ...f });
+      const doc = await createNote(payload);
       docRef.value = doc;
       isLocked.value = false;
       loadedId = doc.id;
       router.replace({ name: 'editor', params: { id: doc.id } });
       if (reminderAt.value) await applyReminder(doc);
     } else {
-      await saveNote(docRef.value.id, { ...f, reminderAt: reminderAt.value });
+      await saveNote(docRef.value.id, { ...payload, reminderAt: reminderAt.value });
       pinned.value = docRef.value.pinned;
       favorite.value = docRef.value.favorite;
     }
@@ -502,7 +513,7 @@ async function importMarkdown() {
     confirm.require({
       header: 'Import Markdown',
       message: 'This will replace the current note content. Continue?',
-      icon: 'pi pi-import',
+      icon: 'bx bx-import',
       acceptClass: 'p-button-secondary',
       accept: doImportMarkdown
     });
@@ -631,9 +642,9 @@ async function onReminderChange(v) {
 }
 
 async function applyReminder(doc) {
-  await doc.incrementalPatch({ reminderAt: reminderAt.value, reminderNotified: false });
+  await updateNote(doc.id, { reminderAt: reminderAt.value, reminderNotified: false });
   if (reminderAt.value > Date.now()) {
-    const ok = await scheduleReminder({ ...doc.toJSON(), reminderAt: reminderAt.value, title: fields.value.title });
+    const ok = await scheduleReminder({ ...doc, reminderAt: reminderAt.value, title: fields.value.title });
     if (ok) toast.add({ severity: 'info', summary: 'Reminder set', life: 1800 });
   } else {
     await cancelReminder(doc.id);
@@ -779,11 +790,11 @@ async function back() {
     <!-- locked note gate -->
     <template v-if="showLockedPanel">
       <header class="app-topbar">
-        <button class="icon-btn" @click="back"><i class="pi pi-arrow-left"></i></button>
+        <button class="icon-btn" @click="back"><i class="bx bx-arrow-back"></i></button>
         <div class="title">Locked note</div>
       </header>
       <div class="vault-hero">
-        <div class="shield"><i class="pi pi-lock"></i></div>
+        <div class="shield"><i class="bx bx-lock-alt"></i></div>
         <h3 style="margin: 0">This note is in your vault</h3>
         <p class="muted" style="margin: 0; max-width: 260px">
           Enter your vault password to decrypt and edit it.
@@ -796,14 +807,14 @@ async function back() {
             style="flex: 1"
             @keyup.enter="tryUnlockVault"
           />
-          <Button icon="pi pi-lock-open" label="Unlock" @click="tryUnlockVault" />
+          <Button icon="bx bx-lock-open" label="Unlock" @click="tryUnlockVault" />
         </div>
       </div>
     </template>
 
     <template v-else>
       <header class="app-topbar">
-        <button class="icon-btn" @click="back"><i class="pi pi-arrow-left"></i></button>
+        <button class="icon-btn" @click="back"><i class="bx bx-arrow-back"></i></button>
         <div class="title">
           {{ isDraft ? 'New note' : notebookTitle || 'Note' }}
           <div class="subtitle">
@@ -813,16 +824,16 @@ async function back() {
           </div>
         </div>
         <button class="icon-btn" :class="{ accent: pinned }" @click="onPin">
-          <i class="pi pi-thumbtack"></i>
+          <i class="bx bx-pin"></i>
         </button>
         <button class="icon-btn" :class="{ accent: reminderAt > Date.now() }" @click="reminderDlg = true">
-          <i class="pi pi-bell"></i>
+          <i class="bx bx-bell"></i>
         </button>
         <button class="icon-btn" :class="{ accent: isLocked }" @click="onLockToggle">
-          <i :class="['pi', isLocked ? 'pi-lock' : 'pi-lock-open']"></i>
+          <i :class="['bx', isLocked ? 'bx-lock-alt' : 'bx-lock-open']"></i>
         </button>
-        <button class="icon-btn qs-btn" title="Quick switcher" @click="openPalette"><i class="pi pi-bolt"></i></button>
-        <button class="icon-btn" @click="overflow?.toggle($event)"><i class="pi pi-ellipsis-v"></i></button>
+        <button class="icon-btn qs-btn" title="Quick switcher" @click="openPalette"><i class="bx bx-bolt-circle"></i></button>
+        <button class="icon-btn" @click="overflow?.toggle($event)"><i class="bx bx-dots-vertical"></i></button>
         <Popover ref="overflow">
           <Menu :model="overflowItems" class="border-none" style="max-height: 70vh; overflow-y: auto" />
         </Popover>
@@ -839,18 +850,18 @@ async function back() {
       <!-- attachment tray -->
       <div v-if="(audios.length || files.length || images.length) && docRef" class="att-tray">
         <div v-for="a in audios" :key="a.id" class="att-audio">
-          <i class="pi pi-microphone" style="color: var(--ink-accent)"></i>
+          <i class="bx bx-microphone" style="color: var(--ink-accent)"></i>
           <span class="name">{{ a.name }}</span>
           <audio v-if="attUrls[a.id]" controls :src="attUrls[a.id]" style="height: 34px; max-width: 170px"></audio>
           <button class="icon-btn" style="width: 30px; height: 30px" @click="dropAttachment(a)">
-            <i class="pi pi-times"></i>
+            <i class="bx bx-x"></i>
           </button>
         </div>
         <div v-for="a in files" :key="a.id" class="att-audio">
-          <i class="pi pi-paperclip" style="color: var(--ink-accent)"></i>
+          <i class="bx bx-paperclip" style="color: var(--ink-accent)"></i>
           <span class="name">{{ a.name }} <span class="muted">· {{ formatSize(a.size) }}</span></span>
           <button class="icon-btn" style="width: 30px; height: 30px" @click="dropAttachment(a)">
-            <i class="pi pi-times"></i>
+            <i class="bx bx-x"></i>
           </button>
         </div>
         <div v-if="images.length" class="att-imgs">
@@ -865,35 +876,35 @@ async function back() {
       </div>
 
       <div class="editor-toolbar">
-        <button class="icon-btn" :class="{ active: formats.bold }" @click="cmd('bold', true)"><i class="pi pi-bold"></i></button>
-        <button class="icon-btn" :class="{ active: formats.italic }" @click="cmd('italic', true)"><i class="pi pi-italic"></i></button>
-        <button class="icon-btn" :class="{ active: formats.underline }" @click="cmd('underline', true)"><i class="pi pi-underline"></i></button>
-        <button class="icon-btn" :class="{ active: formats.strike }" @click="cmd('strike', true)"><i class="pi pi-strikethrough"></i></button>
+        <button class="icon-btn" :class="{ active: formats.bold }" @click="cmd('bold', true)"><i class="bx bx-bold"></i></button>
+        <button class="icon-btn" :class="{ active: formats.italic }" @click="cmd('italic', true)"><i class="bx bx-italic"></i></button>
+        <button class="icon-btn" :class="{ active: formats.underline }" @click="cmd('underline', true)"><i class="bx bx-underline"></i></button>
+        <button class="icon-btn" :class="{ active: formats.strike }" @click="cmd('strike', true)"><i class="bx bx-strikethrough"></i></button>
         <span class="sep"></span>
         <button class="icon-btn" :class="{ active: formats.header === 1 }" style="font-weight: 800" @click="cmd('header', 1)">H1</button>
         <button class="icon-btn" :class="{ active: formats.header === 2 }" style="font-weight: 700" @click="cmd('header', 2)">H2</button>
-        <button class="icon-btn" :class="{ active: formats.blockquote }" @click="cmd('blockquote', true)"><i class="pi pi-comment"></i></button>
-        <button class="icon-btn" :class="{ active: formats['code-block'] }" @click="cmd('code-block', true)"><i class="pi pi-code"></i></button>
+        <button class="icon-btn" :class="{ active: formats.blockquote }" @click="cmd('blockquote', true)"><i class="bx bx-comment"></i></button>
+        <button class="icon-btn" :class="{ active: formats['code-block'] }" @click="cmd('code-block', true)"><i class="bx bx-code"></i></button>
         <span class="sep"></span>
-        <button class="icon-btn" :class="{ active: formats.list === 'bullet' }" @click="cmd('list', 'bullet')"><i class="pi pi-list"></i></button>
-        <button class="icon-btn" :class="{ active: formats.list === 'ordered' }" @click="cmd('list', 'ordered')"><i class="pi pi-sort-numeric-down"></i></button>
-        <button class="icon-btn" :class="{ active: formats.list === 'checked' || formats.list === 'unchecked' }" @click="cmd('list', 'checked')"><i class="pi pi-check-square"></i></button>
+        <button class="icon-btn" :class="{ active: formats.list === 'bullet' }" @click="cmd('list', 'bullet')"><i class="bx bx-list-ul"></i></button>
+        <button class="icon-btn" :class="{ active: formats.list === 'ordered' }" @click="cmd('list', 'ordered')"><i class="bx bx-sort-down"></i></button>
+        <button class="icon-btn" :class="{ active: formats.list === 'checked' || formats.list === 'unchecked' }" @click="cmd('list', 'checked')"><i class="bx bx-check-square"></i></button>
         <span class="sep"></span>
-        <button class="icon-btn" @click="cmdLink"><i class="pi pi-link"></i></button>
-        <button class="icon-btn" @click="cmdClean"><i class="pi pi-eraser"></i></button>
+        <button class="icon-btn" @click="cmdLink"><i class="bx bx-link"></i></button>
+        <button class="icon-btn" @click="cmdClean"><i class="bx bx-eraser"></i></button>
       </div>
 
       <div class="editor-statusbar">
-        <button class="icon-btn" style="width: 34px; height: 34px" title="Gallery" @click="attachFromGallery"><i class="pi pi-image"></i></button>
-        <button class="icon-btn" style="width: 34px; height: 34px" title="Camera" @click="attachFromCamera"><i class="pi pi-camera"></i></button>
-        <button class="icon-btn" style="width: 34px; height: 34px" title="Record audio" @click="startRecording"><i class="pi pi-microphone"></i></button>
-        <button class="icon-btn" style="width: 34px; height: 34px" title="Attach file" @click="attachFiles"><i class="pi pi-paperclip"></i></button>
+        <button class="icon-btn" style="width: 34px; height: 34px" title="Gallery" @click="attachFromGallery"><i class="bx bx-image"></i></button>
+        <button class="icon-btn" style="width: 34px; height: 34px" title="Camera" @click="attachFromCamera"><i class="bx bx-camera"></i></button>
+        <button class="icon-btn" style="width: 34px; height: 34px" title="Record audio" @click="startRecording"><i class="bx bx-microphone"></i></button>
+        <button class="icon-btn" style="width: 34px; height: 34px" title="Attach file" @click="attachFiles"><i class="bx bx-paperclip"></i></button>
         <span class="spacer"></span>
         <span>{{ words }} words · {{ readMin }} min</span>
         <button class="icon-btn" style="width: 34px; height: 34px" title="Outline" @click="outlineOpen = true">
-          <i class="pi pi-align-left"></i>
+          <i class="bx bx-align-left"></i>
         </button>
-        <button class="icon-btn" style="width: 34px; height: 34px" @click="detailsDlg = true"><i class="pi pi-palette"></i></button>
+        <button class="icon-btn" style="width: 34px; height: 34px" @click="detailsDlg = true"><i class="bx bx-palette"></i></button>
       </div>
     </template>
 
@@ -904,8 +915,8 @@ async function back() {
         <div class="time">{{ recorder.pretty.value }}</div>
         <div class="level-meter"><div :style="{ width: `${recorder.level.value * 100}%` }"></div></div>
       </div>
-      <Button icon="pi pi-times" severity="secondary" text rounded @click="recorder.cancel()" />
-      <Button icon="pi pi-check" rounded @click="stopRecording" />
+      <Button icon="bx bx-x" severity="secondary" text rounded @click="recorder.cancel()" />
+      <Button icon="bx bx-check" rounded @click="stopRecording" />
     </div>
 
     <!-- dialogs -->
@@ -923,7 +934,7 @@ async function back() {
 
     <Drawer v-model:visible="outlineOpen" position="right" header="Outline" :style="{ width: '290px' }">
       <div v-if="!outline.length" class="outline-empty">
-        <i class="pi pi-align-left"></i>
+        <i class="bx bx-align-left"></i>
         <span>Add H1 or H2 headings to build an outline of this note.</span>
       </div>
       <nav v-else class="outline-list">
@@ -955,24 +966,24 @@ async function back() {
       />
       <template #footer>
         <Button label="Cancel" text severity="secondary" @click="templateDlg = false" />
-        <Button label="Save template" icon="pi pi-bookmark" @click="confirmSaveTemplate" />
+        <Button label="Save template" icon="bx bx-bookmark" @click="confirmSaveTemplate" />
       </template>
     </Dialog>
 
     <Dialog v-model:visible="detailsDlg" modal header="Note details" :style="{ width: '400px', maxWidth: '92vw' }">
       <div class="settings-group" style="margin-bottom: 10px">
         <div class="settings-row">
-          <i class="pi pi-heart"></i>
+          <i class="bx bx-heart"></i>
           <span class="label">Favorite</span>
           <ToggleSwitch :model-value="favorite" @update:model-value="onFavorite" />
         </div>
         <div class="settings-row" @click="notebookDlg = true" style="cursor: pointer">
-          <i class="pi pi-book"></i>
+          <i class="bx bx-book"></i>
           <span class="label">Notebook</span>
           <span class="value">{{ notebookTitle || 'None' }}</span>
         </div>
         <div class="settings-row" @click="tagsDlg = true" style="cursor: pointer">
-          <i class="pi pi-tags"></i>
+          <i class="bx bx-purchase-tag"></i>
           <span class="label">Tags</span>
           <span class="value">{{ fields.tags.length ? fields.tags.join(', ') : 'None' }}</span>
         </div>

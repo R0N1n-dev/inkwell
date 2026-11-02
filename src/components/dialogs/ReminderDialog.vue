@@ -62,8 +62,8 @@ function clear() {
       placeholder="Pick date & time"
     />
     <div class="row" style="justify-content: space-between; margin-top: 16px">
-      <Button label="Remove" severity="danger" text icon="pi pi-trash" @click="clear" />
-      <Button label="Set reminder" icon="pi pi-bell" @click="save" />
+      <Button label="Remove" severity="danger" text icon="bx bx-trash" @click="clear" />
+      <Button label="Set reminder" icon="bx bx-bell" @click="save" />
     </div>
   </Dialog>
 </template>

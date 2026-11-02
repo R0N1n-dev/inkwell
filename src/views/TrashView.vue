@@ -33,7 +33,7 @@ function onSwipeLeft(doc) {
   confirm.require({
     header: 'Delete forever?',
     message: `“${doc.title || 'Untitled'}” will be permanently deleted, including attachments.`,
-    icon: 'pi pi-exclamation-triangle',
+    icon: 'bx bx-error',
     acceptClass: 'p-button-danger',
     accept: async () => {
       await purgeNote(doc.id);
@@ -47,7 +47,7 @@ function purgeAll() {
   confirm.require({
     header: 'Empty trash?',
     message: 'All notes in trash will be permanently deleted.',
-    icon: 'pi pi-exclamation-triangle',
+    icon: 'bx bx-error',
     acceptClass: 'p-button-danger',
     accept: async () => {
       await emptyTrash();
@@ -61,24 +61,24 @@ function purgeAll() {
 <template>
   <div class="app-shell">
     <header class="app-topbar">
-      <button class="icon-btn" @click="openSidebar()"><i class="pi pi-bars"></i></button>
+      <button class="icon-btn" @click="openSidebar()"><i class="bx bx-menu"></i></button>
       <div class="title">Trash<div class="subtitle">{{ shown.length }} notes</div></div>
-      <button v-if="shown.length" class="icon-btn" @click="purgeAll"><i class="pi pi-eraser"></i></button>
+      <button v-if="shown.length" class="icon-btn" @click="purgeAll"><i class="bx bx-eraser"></i></button>
     </header>
 
     <div v-if="shown.length" class="trash-banner">
-      <i class="pi pi-info-circle"></i>
+      <i class="bx bx-info-circle"></i>
       Notes are kept for {{ trashDays }} days, then deleted forever.
     </div>
 
     <div class="scroll-area">
-      <EmptyState v-if="!shown.length" icon="pi pi-trash" title="Trash is empty" text="Notes you delete land here first — swipe right on a note to restore it." />
+      <EmptyState v-if="!shown.length" icon="bx bx-trash" title="Trash is empty" text="Notes you delete land here first — swipe right on a note to restore it." />
       <div v-else class="note-list">
         <SwipeRow
           v-for="doc in shown"
           :key="doc.id"
-          left-icon="pi pi-exclamation-triangle"
-          right-icon="pi pi-replay"
+          left-icon="bx bx-error"
+          right-icon="bx bx-reset"
           left-color="#B42318"
           right-color="#46A758"
           @swipe-left="onSwipeLeft(doc)"

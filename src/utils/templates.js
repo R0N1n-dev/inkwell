@@ -18,11 +18,11 @@ const t = (id, name, icon, description, content, extra = {}) => ({
 });
 
 export const BUILTIN_TEMPLATES = [
-  t('tpl_blank', 'Blank note', 'pi pi-file', 'A clean page, nothing to delete', ''),
+  t('tpl_blank', 'Blank note', 'bx bx-file', 'A clean page, nothing to delete', ''),
   t(
     'tpl_daily',
     'Daily journal',
-    'pi pi-sun',
+    'bx bx-sun',
     'Focus, notes and gratitude for today',
     `<h2>Focus for today</h2><p><br></p><h2>Notes</h2><ul><li data-list="bullet"><br></li></ul><h2>Gratitude</h2><p><br></p><h2>Tomorrow</h2><ul><li data-list="unchecked"><br></li></ul>`,
     { tags: ['journal'] }
@@ -30,35 +30,35 @@ export const BUILTIN_TEMPLATES = [
   t(
     'tpl_meeting',
     'Meeting notes',
-    'pi pi-users',
+    'bx bx-group',
     'Agenda, decisions and action items',
     `<h2>Attendees</h2><p><br></p><h2>Agenda</h2><ul><li data-list="bullet"><br></li></ul><h2>Notes</h2><p><br></p><h2>Decisions</h2><p><br></p><h2>Action items</h2><ul><li data-list="unchecked">Owner — task</li><li data-list="unchecked"><br></li></ul>`
   ),
   t(
     'tpl_project',
     'Project plan',
-    'pi pi-briefcase',
+    'bx bx-briefcase',
     'Goal, scope, milestones and risks',
     `<h2>Goal</h2><p><br></p><h2>Scope</h2><p><br></p><h2>Milestones</h2><ul><li data-list="unchecked">Kick-off</li><li data-list="unchecked">First draft</li><li data-list="unchecked">Review</li><li data-list="unchecked">Ship</li></ul><h2>Risks &amp; open questions</h2><p><br></p><h2>Links</h2><p><br></p>`
   ),
   t(
     'tpl_checklist',
     'Checklist',
-    'pi pi-check-square',
+    'bx bx-check-square',
     'A simple list of things to do',
     `<h2>Checklist</h2><ul><li data-list="unchecked">First item</li><li data-list="unchecked">Second item</li><li data-list="unchecked">Third item</li></ul>`
   ),
   t(
     'tpl_book',
     'Book notes',
-    'pi pi-book',
+    'bx bx-book',
     'Key ideas, quotes and takeaways',
     `<h2>Summary</h2><p><br></p><h2>Key ideas</h2><ul><li data-list="bullet"><br></li></ul><h2>Quotes</h2><blockquote><br></blockquote><h2>What I'll apply</h2><ul><li data-list="unchecked"><br></li></ul>`
   ),
   t(
     'tpl_weekly',
     'Weekly review',
-    'pi pi-calendar',
+    'bx bx-calendar',
     'Wins, lessons and next week’s plan',
     `<h2>Wins</h2><ul><li data-list="bullet"><br></li></ul><h2>Lessons</h2><ul><li data-list="bullet"><br></li></ul><h2>Next week</h2><ul><li data-list="unchecked"><br></li></ul><h2>Notes</h2><p><br></p>`
   )
@@ -79,7 +79,7 @@ export async function saveCustomTemplate({ name, title, content, tags, color, no
   const template = {
     id: `tpl_user_${Date.now().toString(36)}`,
     name: String(name || '').trim() || 'My template',
-    icon: 'pi pi-bookmark',
+    icon: 'bx bx-bookmark',
     description: 'Saved from one of your notes',
     title: title || '',
     content: content || '',

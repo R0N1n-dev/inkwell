@@ -2,20 +2,20 @@
  * Wiki-link resolution: outgoing links, backlinks and link-target search.
  * Scans only local, unlocked, non-trashed notes.
  */
-import { getDB } from './database.js';
+import { getDB, noteList } from './database.js';
 import { extractWikiLinks } from '../utils/links.js';
 
 async function activeNotes() {
-  const db = await getDB();
-  return db.notes.find({ selector: { trashed: false, locked: false } }).exec();
+  await getDB();
+  return noteList.filter((n) => !n.trashed && !n.locked);
 }
 
 const norm = (s) => String(s || '').trim().toLowerCase();
 
 /** Outgoing `[[links]]` resolved by note title. */
-export async function resolveOutgoing(doc) {
-  if (!doc || doc.locked) return [];
-  const titles = extractWikiLinks(doc.contentText || '');
+export async function resolveOutgoing(note) {
+  if (!note || note.locked) return [];
+  const titles = extractWikiLinks(note.contentText || '');
   if (!titles.length) return [];
   const notes = await activeNotes();
   const byTitle = new Map(notes.map((n) => [norm(n.title), n]));
@@ -26,13 +26,13 @@ export async function resolveOutgoing(doc) {
 }
 
 /** Notes that mention this note's title as a `[[wiki link]]`. */
-export async function findBacklinks(doc) {
-  if (!doc || doc.locked || !norm(doc.title)) return [];
-  const needle = norm(doc.title);
+export async function findBacklinks(note) {
+  if (!note || note.locked || !norm(note.title)) return [];
+  const needle = norm(note.title);
   const notes = await activeNotes();
   return notes.filter(
     (n) =>
-      n.id !== doc.id &&
+      n.id !== note.id &&
       extractWikiLinks(n.contentText || '').some((title) => norm(title) === needle)
   );
 }

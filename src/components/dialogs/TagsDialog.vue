@@ -42,7 +42,7 @@ function onKey(e) {
     <div class="chips">
       <span v-for="t in tags" :key="t" class="tag-chip">
         #{{ t }}
-        <button @click="remove(t)"><i class="pi pi-times"></i></button>
+        <button @click="remove(t)"><i class="bx bx-x"></i></button>
       </span>
       <input v-model="input" class="tag-input" placeholder="Add tag…" @keydown="onKey" />
     </div>

@@ -12,7 +12,7 @@ import { saveTextFile } from '../utils/exporters.js';
 import { scheduleDailyReminder } from '../platform/notify.js';
 import { base64ToBytes } from '../utils/format.js';
 import { vaultConfigured, lockVault } from '../crypto/vault.js';
-import { syncWidgets } from '../platform/widgets.js';
+import { syncWidgets, syncWidgetNow } from '../platform/widgets.js';
 import { loadTemplates, deleteCustomTemplate } from '../utils/templates.js';
 import { openPalette } from '../composables/usePalette.js';
 
@@ -30,6 +30,7 @@ const dailyMin = ref(0);
 const wordGoal = ref(300);
 const templates = ref([]);
 const templateDlg = ref(false);
+const widgetSync = ref('sync now');
 const customTemplates = computed(() => templates.value.filter((tpl) => tpl.id.startsWith('tpl_user_')));
 
 onMounted(async () => {
@@ -59,11 +60,19 @@ function quickSwitcher() {
   openPalette();
 }
 
+async function refreshHomeWidgets() {
+  widgetSync.value = 'syncing…';
+  await syncWidgetNow();
+  widgetSync.value = 'synced';
+  toast.add({ severity: 'success', summary: 'Widgets refreshed', life: 1500 });
+  setTimeout(() => (widgetSync.value = 'sync now'), 2500);
+}
+
 function removeTemplate(tpl) {
   confirm.require({
     header: 'Delete template?',
     message: `“${tpl.name}” will be removed. Notes created from it are untouched.`,
-    icon: 'pi pi-bookmark',
+    icon: 'bx bx-bookmark',
     acceptClass: 'p-button-danger',
     accept: async () => {
       await deleteCustomTemplate(tpl.id);
@@ -111,7 +120,7 @@ async function importAll() {
     confirm.require({
       header: 'Import backup?',
       message: 'Notes from the backup will be merged into this device.',
-      icon: 'pi pi-download',
+      icon: 'bx bx-download',
       accept: async () => {
         const count = await importBackup(text);
         syncWidgets();
@@ -127,12 +136,12 @@ function wipeAll() {
   confirm.require({
     header: 'Delete everything?',
     message: 'All notes, notebooks, attachments and vault data on this device will be erased. This cannot be undone.',
-    icon: 'pi pi-exclamation-triangle',
+    icon: 'bx bx-error',
     acceptClass: 'p-button-danger',
     acceptLabel: 'Erase all',
     accept: async () => {
       const db = await getDB();
-      await db.remove();
+      await db.delete();
       location.reload();
     }
   });
@@ -142,19 +151,19 @@ function wipeAll() {
 <template>
   <div class="app-shell">
     <header class="app-topbar">
-      <button class="icon-btn" @click="openSidebar()"><i class="pi pi-bars"></i></button>
+      <button class="icon-btn" @click="openSidebar()"><i class="bx bx-menu"></i></button>
       <div class="title">Settings</div>
     </header>
 
     <div class="scroll-area" style="max-width: 640px; margin: 0 auto; width: 100%">
       <div class="settings-group">
         <div class="settings-row" style="cursor: pointer" @click="themeDlg = true">
-          <i class="pi pi-palette"></i>
+          <i class="bx bx-palette"></i>
           <span class="label">Theme</span>
           <span class="value">{{ THEMES.find((t) => t.id === themeId)?.name }}</span>
         </div>
         <div class="settings-row">
-          <i class="pi pi-moon"></i>
+          <i class="bx bx-moon"></i>
           <span class="label">Appearance</span>
           <Select
             v-model="modePref"
@@ -173,12 +182,12 @@ function wipeAll() {
 
       <div class="settings-group">
         <div class="settings-row">
-          <i class="pi pi-shield"></i>
+          <i class="bx bx-shield"></i>
           <span class="label">Vault</span>
           <span class="value">{{ vaultConfigured ? 'configured' : 'not set up' }}</span>
         </div>
         <div class="settings-row">
-          <i class="pi pi-clock"></i>
+          <i class="bx bx-time-five"></i>
           <span class="label">Auto-lock vault</span>
           <Select
             :model-value="autoLock"
@@ -196,7 +205,7 @@ function wipeAll() {
           />
         </div>
         <div class="settings-row">
-          <i class="pi pi-mobile"></i>
+          <i class="bx bx-mobile"></i>
           <span class="label">Lock when app backgrounds</span>
           <ToggleSwitch :model-value="lockOnBg" @update:model-value="toggleLockBg" />
         </div>
@@ -204,19 +213,19 @@ function wipeAll() {
 
       <div class="settings-group">
         <div class="settings-row">
-          <i class="pi pi-bell"></i>
+          <i class="bx bx-bell"></i>
           <span class="label">Daily writing nudge</span>
           <ToggleSwitch :model-value="dailyOn" @update:model-value="toggleDaily" />
         </div>
         <div v-if="dailyOn" class="settings-row">
-          <i class="pi pi-clock"></i>
+          <i class="bx bx-time-five"></i>
           <span class="label">Time</span>
           <InputNumber v-model="dailyHour" :min="0" :max="23" :showButtons="false" style="width: 56px" />
           <span>:</span>
           <InputNumber v-model="dailyMin" :min="0" :max="59" :showButtons="false" style="width: 56px" />
         </div>
         <div class="settings-row">
-          <i class="pi pi-trash"></i>
+          <i class="bx bx-trash"></i>
           <span class="label">Keep trash for</span>
           <Select
             :model-value="trashDays"
@@ -235,7 +244,7 @@ function wipeAll() {
 
       <div class="settings-group">
         <div class="settings-row">
-          <i class="pi pi-pencil"></i>
+          <i class="bx bx-pencil"></i>
           <span class="label">Daily word goal</span>
           <InputNumber
             :model-value="wordGoal"
@@ -248,47 +257,60 @@ function wipeAll() {
           />
         </div>
         <div class="settings-row" style="cursor: pointer" @click="openTemplates">
-          <i class="pi pi-bookmark"></i>
+          <i class="bx bx-bookmark"></i>
           <span class="label">Note templates</span>
           <span class="value">{{ customTemplates.length ? `${customTemplates.length} custom` : 'built-in' }}</span>
-          <i class="pi pi-chevron-right" style="font-size: 11px; color: var(--ink-text-muted)"></i>
+          <i class="bx bx-chevron-right" style="font-size: 11px; color: var(--ink-text-muted)"></i>
         </div>
         <div class="settings-row" style="cursor: pointer" @click="quickSwitcher">
-          <i class="pi pi-bolt"></i>
+          <i class="bx bx-bolt-circle"></i>
           <span class="label">Quick switcher</span>
           <span class="value">Ctrl / ⌘ K</span>
         </div>
       </div>
 
       <div class="settings-group">
+        <div class="settings-row" style="cursor: pointer" @click="refreshHomeWidgets">
+          <i class="bx bx-grid-alt"></i>
+          <span class="label">Refresh home-screen widgets</span>
+          <span class="value">{{ widgetSync }}</span>
+        </div>
+        <div class="settings-row">
+          <i class="bx bx-mobile"></i>
+          <span class="label">Widget quick capture</span>
+          <span class="hint">imports on next open</span>
+        </div>
+      </div>
+
+      <div class="settings-group">
         <div class="settings-row" style="cursor: pointer" @click="exportAll">
-          <i class="pi pi-upload"></i>
+          <i class="bx bx-upload"></i>
           <span class="label">Export backup</span>
           <span class="value">notes + attachments</span>
         </div>
         <div class="settings-row" style="cursor: pointer" @click="importAll">
-          <i class="pi pi-download"></i>
+          <i class="bx bx-download"></i>
           <span class="label">Import backup</span>
           <span class="value">merge from file</span>
         </div>
         <div class="settings-row" style="cursor: pointer" @click="emptyTrash().then(() => syncWidgets())">
-          <i class="pi pi-eraser"></i>
+          <i class="bx bx-eraser"></i>
           <span class="label">Empty trash now</span>
         </div>
         <div class="settings-row" style="cursor: pointer; color: #e5484d" @click="wipeAll">
-          <i class="pi pi-exclamation-triangle" style="color: #e5484d"></i>
+          <i class="bx bx-error" style="color: #e5484d"></i>
           <span class="label" style="color: #e5484d">Erase all data</span>
         </div>
       </div>
 
       <div class="settings-group">
         <div class="settings-row">
-          <i class="pi pi-info-circle"></i>
+          <i class="bx bx-info-circle"></i>
           <span class="label">Inkwell</span>
           <span class="value">v1.0.0</span>
         </div>
         <div class="settings-row">
-          <i class="pi pi-cog"></i>
+          <i class="bx bx-cog"></i>
           <span class="label">Stack</span>
           <span class="value">Vue 3 · Vite 8 · Capacitor 8 · RxDB · PrimeVue</span>
         </div>
@@ -317,14 +339,14 @@ function wipeAll() {
       </p>
       <div class="tpl-list">
         <div v-for="tpl in templates" :key="tpl.id" class="tpl-row">
-          <span class="tpl-icon"><i :class="tpl.icon || 'pi pi-file'"></i></span>
+          <span class="tpl-icon"><i :class="tpl.icon || 'bx bx-file'"></i></span>
           <span class="tpl-main">
             <span class="tpl-name">{{ tpl.name }}</span>
             <span class="tpl-desc">{{ tpl.description }}</span>
           </span>
           <Button
             v-if="customTemplates.some((t) => t.id === tpl.id)"
-            icon="pi pi-trash"
+            icon="bx bx-trash"
             text
             size="small"
             severity="danger"

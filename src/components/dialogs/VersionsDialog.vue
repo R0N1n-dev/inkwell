@@ -59,7 +59,7 @@ const countFor = (rev) => `${wordCount(rev.contentText)} words`;
     @update:visible="emit('update:visible', $event)"
   >
     <div class="versions-head">
-      <i class="pi pi-history"></i>
+      <i class="bx bx-history"></i>
       <span>
         Local snapshots of <strong>{{ doc?.title || 'this note' }}</strong>. Inkwell keeps the newest
         25 automatically — nothing leaves your device.
@@ -68,13 +68,13 @@ const countFor = (rev) => `${wordCount(rev.contentText)} words`;
 
     <div v-if="loading" class="versions-empty">Loading snapshots…</div>
     <div v-else-if="!rows.length" class="versions-empty">
-      <i class="pi pi-clock"></i>
+      <i class="bx bx-time-five"></i>
       <span>No snapshots yet. They appear as you keep editing this note.</span>
     </div>
     <div v-else class="versions-list">
       <div v-for="(rev, i) in rows" :key="rev.id" class="version-row">
         <div class="version-dot">
-          <i :class="i === 0 ? 'pi pi-star-fill' : 'pi pi-clock'"></i>
+          <i :class="i === 0 ? 'bx bxs-star' : 'bx bx-time-five'"></i>
         </div>
         <div class="version-main">
           <div class="version-title">{{ rev.title || 'Untitled' }}</div>
@@ -88,7 +88,7 @@ const countFor = (rev) => `${wordCount(rev.contentText)} words`;
         </div>
         <div class="version-actions">
           <span class="version-date">{{ fullDate(rev.created) }}</span>
-          <Button label="Restore" icon="pi pi-replay" size="small" text @click="restore(rev)" />
+          <Button label="Restore" icon="bx bx-reset" size="small" text @click="restore(rev)" />
         </div>
       </div>
     </div>

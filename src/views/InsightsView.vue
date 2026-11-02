@@ -1,8 +1,8 @@
 <script setup>
-import { computed, inject, onMounted, onUnmounted, ref } from 'vue';
+import { computed, inject, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import EmptyState from '../components/EmptyState.vue';
-import { getDB } from '../db/database.js';
+import { noteList, notebookList } from '../db/database.js';
 import { getSetting, setSetting } from '../db/settings.js';
 import { findTodaysNote, getOrCreateDailyNote } from '../db/daily.js';
 import { wordCount } from '../utils/format.js';
@@ -11,27 +11,15 @@ import { dateKey } from '../utils/links.js';
 const router = useRouter();
 const openSidebar = inject('openSidebar', () => {});
 
-const docs = ref([]);
-const notebooks = ref([]);
+const docs = computed(() => noteList.filter((n) => !n.trashed));
+const notebooks = computed(() => notebookList);
 const todayNote = ref(null);
 const goal = ref(300);
-let sub = null;
-
-async function load() {
-  const db = await getDB();
-  docs.value = await db.notes.find({ selector: { trashed: false } }).exec();
-  notebooks.value = await db.notebooks.find().exec();
-  todayNote.value = await findTodaysNote();
-}
 
 onMounted(async () => {
   goal.value = (await getSetting('dailyWordGoal', 300)) || 300;
-  await load();
-  const db = await getDB();
-  sub = db.notes.$.subscribe(() => load());
+  todayNote.value = await findTodaysNote();
 });
-
-onUnmounted(() => sub?.unsubscribe());
 
 const totals = computed(() => {
   let words = 0;
@@ -160,14 +148,14 @@ async function openToday() {
 <template>
   <div class="app-shell">
     <header class="app-topbar">
-      <button class="icon-btn" @click="openSidebar()"><i class="pi pi-bars"></i></button>
+      <button class="icon-btn" @click="openSidebar()"><i class="bx bx-menu"></i></button>
       <div class="title">Insights<div class="subtitle">Your writing, at a glance</div></div>
     </header>
 
     <div class="scroll-area insights">
       <EmptyState
         v-if="!totals.notes"
-        icon="pi pi-chart-bar"
+        icon="bx bx-bar-chart"
         title="Nothing to measure yet"
         text="Write a note and your streak, heatmap and word counts will appear here."
       />
@@ -185,37 +173,37 @@ async function openToday() {
               {{ bestStreak }} day{{ bestStreak === 1 ? '' : 's' }}.
             </p>
           </div>
-          <i class="pi pi-bolt hero-bolt"></i>
+          <i class="bx bx-bolt-circle hero-bolt"></i>
         </section>
 
         <section class="metric-grid">
           <div class="metric-card">
-            <span class="metric-icon"><i class="pi pi-file-edit"></i></span>
+            <span class="metric-icon"><i class="bx bx-edit-alt"></i></span>
             <span class="metric-value">{{ totals.notes }}</span>
             <span class="metric-label">notes</span>
           </div>
           <div class="metric-card">
-            <span class="metric-icon"><i class="pi pi-pencil"></i></span>
+            <span class="metric-icon"><i class="bx bx-pencil"></i></span>
             <span class="metric-value">{{ totals.words.toLocaleString() }}</span>
             <span class="metric-label">words written</span>
           </div>
           <div class="metric-card">
-            <span class="metric-icon"><i class="pi pi-chart-line"></i></span>
+            <span class="metric-icon"><i class="bx bx-line-chart"></i></span>
             <span class="metric-value">{{ totals.average.toLocaleString() }}</span>
             <span class="metric-label">avg. words / note</span>
           </div>
           <div class="metric-card">
-            <span class="metric-icon"><i class="pi pi-paperclip"></i></span>
+            <span class="metric-icon"><i class="bx bx-paperclip"></i></span>
             <span class="metric-value">{{ totals.attachments }}</span>
             <span class="metric-label">attachments</span>
           </div>
           <div class="metric-card">
-            <span class="metric-icon"><i class="pi pi-heart"></i></span>
+            <span class="metric-icon"><i class="bx bx-heart"></i></span>
             <span class="metric-value">{{ totals.favorites }}</span>
             <span class="metric-label">favorites</span>
           </div>
           <div class="metric-card">
-            <span class="metric-icon"><i class="pi pi-shield"></i></span>
+            <span class="metric-icon"><i class="bx bx-shield"></i></span>
             <span class="metric-value">{{ totals.locked }}</span>
             <span class="metric-label">in the vault</span>
           </div>
@@ -229,7 +217,7 @@ async function openToday() {
             </div>
             <Button
               :label="todayNote ? 'Open' : 'Start'"
-              :icon="todayNote ? 'pi pi-arrow-right' : 'pi pi-plus'"
+              :icon="todayNote ? 'bx bx-right-arrow' : 'bx bx-plus'"
               size="small"
               @click="openToday"
             />
@@ -306,7 +294,7 @@ async function openToday() {
           </div>
           <div class="space-rows">
             <div v-for="space in spaces" :key="space.id || 'none'" class="space-row">
-              <i :class="space.id ? 'pi pi-folder' : 'pi pi-inbox'"></i>
+              <i :class="space.id ? 'bx bx-folder' : 'bx bx-archive-in'"></i>
               <span class="space-name">{{ space.title }}</span>
               <span class="space-count">{{ space.count }}</span>
             </div>

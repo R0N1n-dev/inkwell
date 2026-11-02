@@ -85,7 +85,7 @@ async function main() {
   console.log('— search');
   await page.evaluate(() => {
     [...document.querySelectorAll('.app-topbar .icon-btn')]
-      .find((button) => button.querySelector('.pi-search'))
+      .find((button) => button.querySelector('.bx-search'))
       ?.click();
   });
   await wait(400);

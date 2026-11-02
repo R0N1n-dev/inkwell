@@ -1,5 +1,6 @@
-import { getDB, uid } from './database.js';
-import { htmlToText } from '../utils/format.js';
+import { getDB, noteList, notebookList, uid, plain, commitNote, dropNote, commitNotebook } from './database.js';
+import { htmlToText, bytesToBase64, base64ToBytes } from '../utils/format.js';
+import { extractHashtags, mergeTags } from '../utils/tags.js';
 import { encryptPayload, decryptPayload, vaultUnlocked } from '../crypto/vault.js';
 import { snapshotNote, purgeRevisions } from './revisions.js';
 
@@ -8,14 +9,14 @@ import { snapshotNote, purgeRevisions } from './revisions.js';
 /* ------------------------------------------------------------------ */
 
 export async function createNote(fields = {}) {
-  const db = await getDB();
   const now = Date.now();
   const content = fields.content || '';
-  const doc = await db.notes.insert({
+  const contentText = htmlToText(content);
+  return commitNote({
     id: uid('n'),
     title: fields.title || '',
     content,
-    contentText: htmlToText(content),
+    contentText,
     created: now,
     updated: now,
     pinned: false,
@@ -27,49 +28,54 @@ export async function createNote(fields = {}) {
     cipher: '',
     color: fields.color || '',
     notebookId: fields.notebookId || '',
-    tags: fields.tags || [],
+    tags: mergeTags(fields.tags || [], extractHashtags(contentText)),
     reminderAt: 0,
     reminderNotified: false,
     atts: [],
     ...fields.extra
   });
-  return doc;
 }
 
 export async function getNote(id) {
-  const db = await getDB();
-  return db.notes.findOne(id).exec();
+  await getDB();
+  return noteList.find((n) => n.id === id) || null;
+}
+
+/** Patch a note: shallow merge, persisted and reflected everywhere. */
+export async function updateNote(id, patch) {
+  const note = await getNote(id);
+  if (!note) return null;
+  return commitNote({ ...plain(note), ...plain(patch) });
 }
 
 /** Save edits. For locked notes the payload is re-encrypted on the fly. */
 export async function saveNote(id, patch) {
-  const db = await getDB();
-  const doc = await db.notes.findOne(id).exec();
-  if (!doc) return null;
+  const note = await getNote(id);
+  if (!note) return null;
 
-  if (doc.locked) {
+  if (note.locked) {
     if (!vaultUnlocked.value) throw new Error('vault locked');
-    const payload = doc.cipher ? await decryptPayload(doc.cipher) : emptyPayload();
+    const payload = note.cipher ? await decryptPayload(note.cipher) : emptyPayload();
     Object.assign(payload, pickEditable(patch));
     if (patch.content !== undefined) payload.contentText = htmlToText(patch.content);
-    await doc.incrementalPatch({
-      cipher: await encryptPayload(payload),
-      updated: Date.now()
-    });
-    return doc;
+    return updateNote(id, { cipher: await encryptPayload(payload), updated: Date.now() });
   }
 
   const clean = { ...patch, updated: Date.now() };
   if (patch.content !== undefined && patch.contentText === undefined) {
     clean.contentText = htmlToText(patch.content);
   }
+  // `#tag` written in the body becomes a tag. Only on an edit that touches the
+  // body, so removing a tag by hand does not immediately bring it back.
+  if (patch.content !== undefined) {
+    clean.tags = mergeTags(clean.tags ?? note.tags ?? [], extractHashtags(clean.contentText));
+  }
   // Capture the pre-edit state for version history (throttled inside).
   const contentChanged =
-    (patch.title !== undefined && patch.title !== doc.title) ||
-    (patch.content !== undefined && patch.content !== doc.content);
-  if (contentChanged) await snapshotNote(doc);
-  await doc.incrementalPatch(clean);
-  return doc;
+    (patch.title !== undefined && patch.title !== note.title) ||
+    (patch.content !== undefined && patch.content !== note.content);
+  if (contentChanged) await snapshotNote(note);
+  return updateNote(id, clean);
 }
 
 function emptyPayload() {
@@ -85,21 +91,21 @@ function pickEditable(patch) {
 }
 
 /** Read a note's editable fields, decrypting when locked + vault open. */
-export async function readNoteFields(doc) {
-  if (!doc.locked) {
+export async function readNoteFields(note) {
+  if (!note.locked) {
     return {
-      title: doc.title,
-      content: doc.content,
-      contentText: doc.contentText,
-      color: doc.color,
-      notebookId: doc.notebookId,
-      tags: [...doc.tags]
+      title: note.title,
+      content: note.content,
+      contentText: note.contentText,
+      color: note.color,
+      notebookId: note.notebookId,
+      tags: [...(note.tags || [])]
     };
   }
-  if (!vaultUnlocked.value || !doc.cipher) {
-    return { title: '', content: '', contentText: '', color: doc.color, notebookId: '', tags: [] };
+  if (!vaultUnlocked.value || !note.cipher) {
+    return { title: '', content: '', contentText: '', color: note.color, notebookId: '', tags: [] };
   }
-  return { ...emptyPayload(), ...(await decryptPayload(doc.cipher)) };
+  return { ...emptyPayload(), ...(await decryptPayload(note.cipher)) };
 }
 
 /* ------------------------------------------------------------------ */
@@ -107,59 +113,52 @@ export async function readNoteFields(doc) {
 /* ------------------------------------------------------------------ */
 
 export async function trashNote(id) {
-  const doc = await getNote(id);
-  if (!doc) return;
-  await doc.incrementalPatch({ trashed: true, deletedAt: Date.now(), pinned: false, updated: Date.now() });
+  await updateNote(id, { trashed: true, deletedAt: Date.now(), pinned: false, updated: Date.now() });
 }
 
 export async function restoreNote(id) {
-  const doc = await getNote(id);
-  if (!doc) return;
-  await doc.incrementalPatch({ trashed: false, deletedAt: 0, updated: Date.now() });
+  await updateNote(id, { trashed: false, deletedAt: 0, updated: Date.now() });
 }
 
 export async function purgeNote(id) {
   const db = await getDB();
-  const doc = await db.notes.findOne(id).exec();
-  if (!doc) return;
-  const fresh = (await db.notes.findOne(id).exec()) || doc;
-  await fresh.incrementalRemove(); // attachments are removed together with the document
+  await db.attachments.where('noteId').equals(id).delete();
   await purgeRevisions(id);
+  await dropNote(id);
 }
 
 export async function emptyTrash() {
-  const db = await getDB();
-  const docs = await db.notes.find({ selector: { trashed: true } }).exec();
-  await Promise.all(docs.map((d) => purgeNote(d.id)));
+  await getDB();
+  const ids = noteList.filter((n) => n.trashed).map((n) => n.id);
+  for (const id of ids) await purgeNote(id);
 }
 
 /** Purge notes that have been in trash longer than `days`. */
 export async function autoPurgeTrash(days = 30) {
   if (!days) return 0;
-  const db = await getDB();
+  await getDB();
   const cutoff = Date.now() - days * 86400000;
-  const docs = await db.notes
-    .find({ selector: { trashed: true, deletedAt: { $lt: cutoff } } })
-    .exec();
-  await Promise.all(docs.map((d) => purgeNote(d.id)));
-  return docs.length;
+  const ids = noteList.filter((n) => n.trashed && n.deletedAt < cutoff).map((n) => n.id);
+  for (const id of ids) await purgeNote(id);
+  return ids.length;
 }
 
 export async function setArchived(id, archived) {
-  const doc = await getNote(id);
-  if (doc) await doc.incrementalPatch({ archived, updated: Date.now() });
+  await updateNote(id, { archived, updated: Date.now() });
 }
 
 export async function togglePin(id) {
-  const doc = await getNote(id);
-  if (doc) await doc.incrementalPatch({ pinned: !doc.pinned, updated: Date.now() });
-  return doc?.pinned;
+  const note = await getNote(id);
+  if (!note) return undefined;
+  const saved = await updateNote(id, { pinned: !note.pinned, updated: Date.now() });
+  return saved.pinned;
 }
 
 export async function toggleFavorite(id) {
-  const doc = await getNote(id);
-  if (doc) await doc.incrementalPatch({ favorite: !doc.favorite, updated: Date.now() });
-  return doc?.favorite;
+  const note = await getNote(id);
+  if (!note) return undefined;
+  const saved = await updateNote(id, { favorite: !note.favorite, updated: Date.now() });
+  return saved.favorite;
 }
 
 /* ------------------------------------------------------------------ */
@@ -171,89 +170,44 @@ function escapeHtml(s) {
 }
 
 /** Copy every attachment (binary + metadata) from one note to another. */
-async function copyAttachments(fromDoc, toDoc) {
+async function copyAttachments(fromNote, toNote) {
+  let target = toNote;
   const copied = [];
-  let target = toDoc;
-  for (const att of fromDoc.atts || []) {
-    try {
-      const handle = fromDoc.getAttachment(att.id);
-      if (!handle) continue;
-      const data = await handle.getDataBase64();
-      // each put returns a NEW document revision, so keep using the fresh one
-      const rxAtt = await target.putAttachmentBase64({ id: att.id, type: att.type, data });
-      target = rxAtt.doc;
-      copied.push({ ...att });
-    } catch {
-      /* unreadable attachment — skip it */
-    }
-  }
-  if (copied.length) {
-    const atts = [...(target.atts || [])];
-    for (const att of copied) {
-      if (!atts.some((existing) => existing.id === att.id)) atts.push(att);
-    }
-    await target.incrementalPatch({ atts, updated: Date.now() });
+  for (const att of fromNote.atts || []) {
+    if ((target.atts || []).some((a) => a.id === att.id)) continue;
+    const bytes = await getAttachmentBytes(fromNote, att.id);
+    if (!bytes) continue;
+    target = await addAttachment(target, { ...att, data: bytes });
+    copied.push(att.id);
   }
   return copied.length;
 }
 
 /** Create a standalone copy (content, tags, notebook, color, attachments). */
 export async function duplicateNote(id) {
-  const db = await getDB();
-  const src = await db.notes.findOne(id).exec();
+  const src = await getNote(id);
   if (!src) return null;
+  const now = Date.now();
+
   if (src.locked) {
     // Keep the copy encrypted: never turn a vault note into a plaintext note.
-    const now = Date.now();
-    const copy = await db.notes.insert({
-      id: uid('n'),
-      title: '',
-      content: '',
-      contentText: '',
-      created: now,
-      updated: now,
-      pinned: false,
-      favorite: src.favorite,
-      archived: false,
-      trashed: false,
-      deletedAt: 0,
-      locked: true,
-      cipher: src.cipher,
-      color: src.color || '',
-      notebookId: '',
-      tags: [],
-      reminderAt: 0,
-      reminderNotified: false,
-      atts: []
-    });
-    await copyAttachments(src, copy);
-    return (await db.notes.findOne(copy.id).exec()) || copy;
+    const copy = await createNote({ extra: { favorite: src.favorite, color: src.color || '' } });
+    await commitNote({ ...plain(copy), locked: true, cipher: src.cipher, title: '', contentText: '' });
+    await copyAttachments(src, await getNote(copy.id));
+    return getNote(copy.id);
   }
+
   const fields = await readNoteFields(src);
-  const now = Date.now();
-  const copy = await db.notes.insert({
-    id: uid('n'),
+  const copy = await createNote({
     title: `${fields.title || 'Untitled'} (copy)`,
     content: fields.content || '',
-    contentText: fields.contentText || htmlToText(fields.content || ''),
-    created: now,
-    updated: now,
-    pinned: false,
-    favorite: src.favorite,
-    archived: false,
-    trashed: false,
-    deletedAt: 0,
-    locked: false,
-    cipher: '',
-    color: fields.color || '',
-    notebookId: fields.notebookId || '',
     tags: [...(fields.tags || [])],
-    reminderAt: 0,
-    reminderNotified: false,
-    atts: []
+    notebookId: fields.notebookId || '',
+    color: fields.color || '',
+    extra: { favorite: src.favorite }
   });
   await copyAttachments(src, copy);
-  return (await db.notes.findOne(copy.id).exec()) || copy;
+  return getNote(copy.id);
 }
 
 /**
@@ -261,19 +215,24 @@ export async function duplicateNote(id) {
  * Each source becomes an H1 section; attachments are copied across.
  */
 export async function mergeNotes(ids, { title = '' } = {}) {
-  const docs = (await Promise.all(ids.map((id) => getNote(id)))).filter(Boolean);
-  if (docs.length < 2) throw new Error('pick at least two notes');
-  const db = await getDB();
+  const notes = [];
+  for (const id of ids) {
+    const note = await getNote(id);
+    if (note) notes.push(note);
+  }
+  if (notes.length < 2) throw new Error('pick at least two notes');
+
   const sections = [];
   const tags = new Set();
-  for (const doc of docs) {
-    if (doc.locked) continue; // merge never pulls vault plaintext into a normal note
-    const fields = await readNoteFields(doc);
+  for (const note of notes) {
+    if (note.locked) continue; // merge never pulls vault plaintext into a normal note
+    const fields = await readNoteFields(note);
     for (const t of fields.tags || []) tags.add(t);
     sections.push(`<h1>${escapeHtml(fields.title || 'Untitled')}</h1>${fields.content || ''}`);
   }
   if (sections.length < 2) throw new Error('pick at least two unlocked notes');
-  const first = docs[0];
+
+  const first = notes[0];
   const merged = await createNote({
     title: title || `Merged · ${sections.length} notes`,
     content: sections.join('<hr>'),
@@ -281,12 +240,11 @@ export async function mergeNotes(ids, { title = '' } = {}) {
     notebookId: first.notebookId || '',
     color: first.color || ''
   });
-  for (const doc of docs) {
-    if (doc.locked) continue;
-    const target = await db.notes.findOne(merged.id).exec();
-    if (target) await copyAttachments(doc, target);
+  for (const note of notes) {
+    if (note.locked) continue;
+    await copyAttachments(note, await getNote(merged.id));
   }
-  return (await db.notes.findOne(merged.id).exec()) || merged;
+  return getNote(merged.id);
 }
 
 /* ------------------------------------------------------------------ */
@@ -294,20 +252,19 @@ export async function mergeNotes(ids, { title = '' } = {}) {
 /* ------------------------------------------------------------------ */
 
 export async function lockNote(id) {
-  const db = await getDB();
-  const doc = await db.notes.findOne(id).exec();
-  if (!doc || doc.locked) return;
+  const note = await getNote(id);
+  if (!note || note.locked) return;
   const payload = {
-    title: doc.title,
-    content: doc.content,
-    contentText: doc.contentText,
-    color: doc.color,
-    notebookId: doc.notebookId,
-    tags: [...doc.tags]
+    title: note.title,
+    content: note.content,
+    contentText: note.contentText,
+    color: note.color,
+    notebookId: note.notebookId,
+    tags: [...(note.tags || [])]
   };
   // Plaintext history must not survive the note being moved into the vault.
   await purgeRevisions(id);
-  await doc.incrementalPatch({
+  await updateNote(id, {
     locked: true,
     cipher: await encryptPayload(payload),
     title: '',
@@ -321,11 +278,10 @@ export async function lockNote(id) {
 }
 
 export async function unlockNote(id) {
-  const db = await getDB();
-  const doc = await db.notes.findOne(id).exec();
-  if (!doc || !doc.locked) return;
-  const payload = { ...emptyPayload(), ...(await decryptPayload(doc.cipher)) };
-  await doc.incrementalPatch({
+  const note = await getNote(id);
+  if (!note || !note.locked) return;
+  const payload = { ...emptyPayload(), ...(await decryptPayload(note.cipher)) };
+  await updateNote(id, {
     locked: false,
     cipher: '',
     title: payload.title || '',
@@ -339,48 +295,46 @@ export async function unlockNote(id) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Attachments                                                         */
+/* Attachments (binary rows live in their own table)                   */
 /* ------------------------------------------------------------------ */
 
-const urlCache = new Map(); // attKey -> objectURL
+const urlCache = new Map(); // `${noteId}:${attId}` -> object URL
 
-export async function addAttachment(doc, { id, name, type, data }) {
-  const { bytesToBase64 } = await import('../utils/format.js');
-  // putAttachment* returns a NEW document instance (fresh revision)
-  const rxAtt = await doc.putAttachmentBase64({ id, data: bytesToBase64(data), type });
-  const fresh = rxAtt.doc;
-  const atts = [...(fresh.atts || []), { id, name, type, size: data.length }];
-  await fresh.incrementalPatch({ atts, updated: Date.now() });
-  return fresh;
+export async function addAttachment(note, { id, name, type, data }) {
+  const db = await getDB();
+  await db.attachments.put({
+    key: `${note.id}:${id}`,
+    noteId: note.id,
+    attId: id,
+    type,
+    data: new Blob([data], { type })
+  });
+  urlCache.delete(`${note.id}:${id}`);
+  const atts = [...(note.atts || []), { id, name, type, size: data.length }];
+  return updateNote(note.id, { atts, updated: Date.now() });
 }
 
-export async function removeAttachment(doc, attId) {
-  const fresh0 = (await doc.collection.findOne(doc.id).exec()) || doc;
-  try {
-    const att = fresh0.getAttachment(attId);
-    if (att) await att.remove();
-  } catch {
-    /* noop */
-  }
-  urlCache.delete(`${doc.id}:${attId}`);
-  const fresh = (await doc.collection.findOne(doc.id).exec()) || fresh0;
-  await fresh.incrementalPatch({ atts: (fresh.atts || []).filter((a) => a.id !== attId), updated: Date.now() });
+export async function removeAttachment(note, attId) {
+  const db = await getDB();
+  await db.attachments.delete(`${note.id}:${attId}`);
+  urlCache.delete(`${note.id}:${attId}`);
+  const atts = (note.atts || []).filter((a) => a.id !== attId);
+  return updateNote(note.id, { atts, updated: Date.now() });
 }
 
-export async function getAttachmentBytes(doc, attId) {
-  const fresh = (await doc.collection.findOne(doc.id).exec()) || doc;
-  const att = fresh.getAttachment(attId);
-  if (!att) return null;
-  const { base64ToBytes } = await import('../utils/format.js');
-  return base64ToBytes(await att.getDataBase64());
+export async function getAttachmentBytes(note, attId) {
+  const db = await getDB();
+  const row = await db.attachments.get(`${note.id}:${attId}`);
+  if (!row?.data) return null;
+  return new Uint8Array(await row.data.arrayBuffer());
 }
 
-export async function getAttachmentUrl(doc, attId) {
-  const key = `${doc.id}:${attId}`;
+export async function getAttachmentUrl(note, attId) {
+  const key = `${note.id}:${attId}`;
   if (urlCache.has(key)) return urlCache.get(key);
-  const bytes = await getAttachmentBytes(doc, attId);
+  const bytes = await getAttachmentBytes(note, attId);
   if (!bytes) return null;
-  const meta = (doc.atts || []).find((a) => a.id === attId);
+  const meta = (note.atts || []).find((a) => a.id === attId);
   const blob = new Blob([bytes], { type: meta?.type || 'application/octet-stream' });
   const url = URL.createObjectURL(blob);
   urlCache.set(key, url);
@@ -388,7 +342,7 @@ export async function getAttachmentUrl(doc, attId) {
 }
 
 /** Rewrite `attachment://<id>` srcs inside rendered HTML to live blob URLs. */
-export async function resolveAttachmentHtml(doc, html) {
+export async function resolveAttachmentHtml(note, html) {
   if (!html || !html.includes('attachment://')) return html;
   const parser = new DOMParser();
   const root = parser.parseFromString(html, 'text/html');
@@ -396,7 +350,7 @@ export async function resolveAttachmentHtml(doc, html) {
   await Promise.all(
     imgs.map(async (img) => {
       const id = img.getAttribute('src').replace('attachment://', '');
-      const url = await getAttachmentUrl(doc, id);
+      const url = await getAttachmentUrl(note, id);
       if (url) img.setAttribute('src', url);
     })
   );
@@ -409,21 +363,21 @@ export async function resolveAttachmentHtml(doc, html) {
 
 export async function exportBackup() {
   const db = await getDB();
-  const notes = await db.notes.find().exec();
-  const notebooks = await db.notebooks.find().exec();
   const payload = {
     app: 'inkwell',
     version: 1,
     exportedAt: Date.now(),
-    notebooks: notebooks.map((n) => n.toJSON()),
+    notebooks: notebookList.map((n) => plain(n)),
     notes: []
   };
-  for (const n of notes) {
-    const json = n.toJSON();
+  for (const note of noteList) {
+    const json = plain(note);
     json.attachments = [];
-    for (const att of n.atts || []) {
-      const b64 = await n.getAttachment(att.id)?.getDataBase64();
-      if (b64) json.attachments.push({ ...att, data: b64 });
+    for (const att of note.atts || []) {
+      const row = await db.attachments.get(`${note.id}:${att.id}`);
+      if (!row?.data) continue;
+      const bytes = new Uint8Array(await row.data.arrayBuffer());
+      json.attachments.push({ ...att, data: bytesToBase64(bytes) });
     }
     payload.notes.push(json);
   }
@@ -434,28 +388,34 @@ export async function importBackup(jsonString) {
   const db = await getDB();
   const payload = JSON.parse(jsonString);
   if (payload?.app !== 'inkwell') throw new Error('Not an Inkwell backup');
-  let count = 0;
+
   for (const nb of payload.notebooks || []) {
-    const existing = await db.notebooks.findOne(nb.id).exec();
-    if (!existing) await db.notebooks.insert(nb);
+    if (!notebookList.some((n) => n.id === nb.id)) await commitNotebook(nb);
   }
+
+  let count = 0;
   for (const noteJson of payload.notes || []) {
     const attachments = noteJson.attachments || [];
     delete noteJson.attachments;
-    delete noteJson._attachments;
-    // normalize legacy `deleted` field (renamed to `trashed`, RxDB reserves `deleted`)
+    // normalize legacy `deleted` field (renamed to `trashed`)
     if (noteJson.deleted !== undefined && noteJson.trashed === undefined) {
       noteJson.trashed = noteJson.deleted === true;
       delete noteJson.deleted;
     }
-    const existing = await db.notes.findOne(noteJson.id).exec();
+    const existing = noteList.find((n) => n.id === noteJson.id);
     if (existing) {
       if (existing.updated >= (noteJson.updated || 0)) continue;
-      await existing.incrementalRemove();
+      await dropNote(existing.id);
     }
-    const doc = await db.notes.insert(noteJson);
+    await commitNote(noteJson);
     for (const att of attachments) {
-      await doc.putAttachmentBase64({ id: att.id, type: att.type, data: att.data });
+      await db.attachments.put({
+        key: `${noteJson.id}:${att.id}`,
+        noteId: noteJson.id,
+        attId: att.id,
+        type: att.type,
+        data: new Blob([base64ToBytes(att.data)], { type: att.type })
+      });
     }
     count++;
   }

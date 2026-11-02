@@ -79,21 +79,14 @@ export async function scheduleDailyReminder(enabled, hour = 20, minute = 0) {
 
 /** Fires when a scheduled reminder time passes while the app is open. */
 export async function sweepDueReminders(onDue) {
-  const { getDB } = await import('../db/database.js');
-  const db = await getDB();
+  const { getDB, noteList } = await import('../db/database.js');
+  const { updateNote } = await import('../db/notes.js');
+  await getDB();
   const now = Date.now();
-  const due = await db.notes
-    .find({
-      selector: {
-        trashed: false,
-        reminderNotified: false,
-        reminderAt: { $gt: 0, $lt: now }
-      }
-    })
-    .exec();
-  for (const doc of due) {
-    await doc.incrementalPatch({ reminderNotified: true });
-    onDue?.(doc);
+  const due = noteList.filter((n) => !n.trashed && !n.reminderNotified && n.reminderAt > 0 && n.reminderAt < now);
+  for (const note of due) {
+    await updateNote(note.id, { reminderNotified: true });
+    onDue?.(note);
   }
   return due.length;
 }

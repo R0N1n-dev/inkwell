@@ -48,29 +48,26 @@ body {
   padding-bottom: var(--ink-safe-bottom);
 }
 
-/* Drawers are app surfaces, not system chrome. Keep both the panel and its
-   mask inside the status-bar / gesture-bar safe areas so they never paint
-   over the OS bars or make their icons unreadable. */
-.p-drawer-mask,
+/* Dialogs stay inside the system bars so they never collide with the status
+   bar. Drawers are full-window surfaces instead: the panel spans the whole
+   screen and its content pads itself around the safe areas. Shrinking the
+   drawer itself (top/bottom insets) left a content-sized panel floating below
+   the status bar — that is what looked broken. */
 .p-dialog-mask {
-  top: var(--ink-safe-top) !important;
-  bottom: var(--ink-safe-bottom) !important;
-  height: auto !important;
-}
-.p-drawer {
   top: var(--ink-safe-top) !important;
   bottom: var(--ink-safe-bottom) !important;
   height: auto !important;
 }
 
 /* The sidebar brings its own brand row, so drop PrimeVue's empty header and
-   the default content padding. Its content then starts flush at the status
-   bar edge instead of after a blank band. */
+   the default content padding. The brand row and the last theme dot carry the
+   status-bar / gesture-bar padding themselves. */
 .ink-drawer .p-drawer-header {
   display: none;
 }
 .ink-drawer .p-drawer-content {
-  padding: 0;
+  padding: 0 0 var(--ink-safe-bottom);
+  overflow-y: auto;
 }
 
 .app-topbar {

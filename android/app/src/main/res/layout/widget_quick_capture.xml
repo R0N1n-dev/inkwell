@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Native capture sheet opened from the widgets: no app launch, saves instantly. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="306dp"
+    android:layout_height="wrap_content"
+    android:background="@drawable/widget_capture_card"
+    android:orientation="vertical"
+    android:padding="18dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:letterSpacing="0.1"
+            android:text="@string/widget_capture_title"
+            android:textAllCaps="true"
+            android:textColor="@color/widget_accent"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <ImageView
+            android:id="@+id/qc_voice"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/widget_voice"
+            android:padding="8dp"
+            android:src="@drawable/widget_ic_mic" />
+    </LinearLayout>
+
+    <EditText
+        android:id="@+id/qc_input"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:background="@drawable/widget_capture_field"
+        android:gravity="top|start"
+        android:hint="@string/widget_capture_hint"
+        android:inputType="textMultiLine|textCapSentences"
+        android:maxLines="6"
+        android:minLines="3"
+        android:padding="12dp"
+        android:textColor="@color/widget_text"
+        android:textColorHint="@color/widget_faint"
+        android:textSize="15sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <CheckBox
+            android:id="@+id/qc_pin"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:buttonTint="@color/widget_accent"
+            android:text="@string/widget_pin"
+            android:textColor="@color/widget_muted"
+            android:textSize="12sp" />
+
+        <Space
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <Button
+            android:id="@+id/qc_cancel"
+            style="@android:style/Widget.Material.Button.Borderless"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="0dp"
+            android:paddingLeft="12dp"
+            android:paddingRight="12dp"
+            android:text="@string/widget_cancel"
+            android:textColor="@color/widget_muted"
+            android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/qc_save"
+            style="@android:style/Widget.Material.Button.Borderless"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="0dp"
+            android:paddingLeft="12dp"
+            android:paddingRight="12dp"
+            android:text="@string/widget_save"
+            android:textColor="@color/widget_accent"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+</LinearLayout>

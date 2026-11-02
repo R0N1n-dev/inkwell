@@ -1,16 +1,18 @@
 /**
  * Node smoke test for the Inkwell data layer:
- * RxDB schema, queries, attachments and vault crypto.
+ * Dexie storage, notes CRUD, queries, attachments, version history, backup.
  *
  * Run: npm run test:db
  */
-import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
-import { createRxDatabase } from 'rxdb';
-import { addRxPlugin } from 'rxdb';
-import { RxDBAttachmentsPlugin } from 'rxdb/plugins/attachments';
-import { RxDBQueryBuilderPlugin } from 'rxdb/plugins/query-builder';
-import { noteSchema, notebookSchema, settingsSchema, revisionSchema } from '../src/db/schema.js';
-import { htmlToText } from '../src/utils/format.js';
+import 'fake-indexeddb/auto';
+
+const { getDB, noteList, notebookList, uid } = await import('../src/db/database.js');
+const notes = await import('../src/db/notes.js');
+const { listRevisions, snapshotNote } = await import('../src/db/revisions.js');
+const { getSetting, setSetting } = await import('../src/db/settings.js');
+const { useNotesQuery } = await import('../src/composables/useQueries.js');
+const { ref } = await import('vue');
+const { htmlToText } = await import('../src/utils/format.js');
 
 let failures = 0;
 function check(name, cond) {
@@ -21,117 +23,108 @@ function check(name, cond) {
   }
 }
 
-addRxPlugin(RxDBAttachmentsPlugin);
-addRxPlugin(RxDBQueryBuilderPlugin);
-const storage = getRxStorageMemory();
+await getDB();
 
-const db = await createRxDatabase({
-  name: `inktest-${Date.now()}`,
-  storage,
-  multiInstance: false
-});
-await db.addCollections({
-  notes: { schema: noteSchema },
-  notebooks: { schema: notebookSchema },
-  settings: { schema: settingsSchema },
-  revisions: { schema: revisionSchema }
-});
+console.log('— create + list');
+const nb = await import('../src/db/database.js').then((m) =>
+  m.commitNotebook({ id: 'nb1', title: 'Work', description: '', color: '', icon: '', created: 1, updated: 1, sortIndex: 1 })
+);
+await getDB();
+check('notebook stored', notebookList.some((n) => n.id === 'nb1'));
 
-console.log('— schema + inserts');
-const now = Date.now();
-await db.notebooks.insert({ id: 'nb1', title: 'Work', created: now, updated: now, sortIndex: 1 });
-const note = await db.notes.insert({
-  id: 'n1',
-  title: 'Hello',
-  content: '<p>World <strong>bold</strong></p>',
-  contentText: 'Hello world',
-  created: now,
-  updated: now,
-  tags: ['demo', 'work'],
-  notebookId: 'nb1'
-});
-await db.notes.insert({
-  id: 'n2',
-  title: 'Second',
-  content: '',
-  contentText: 'another one',
-  created: now + 1,
-  updated: now + 1,
-  tags: ['demo'],
-  archived: true
-});
-check('insert note + notebook', true);
+const a = await notes.createNote({ title: 'Hello', content: '<p>World</p>', tags: ['demo', 'work'], notebookId: 'nb1' });
+await new Promise((r) => setTimeout(r, 5));
+const b = await notes.createNote({ title: 'Second', content: '<p>another</p>', tags: ['demo'] });
+check('note ids are unique', a.id !== b.id && a.id.startsWith('n_'));
+check('contentText projection', a.contentText === 'World');
+check('notebook list has the notebook', nb.title === 'Work');
 
-console.log('— queries');
-const all = await db.notes.find({ selector: { trashed: false }, sort: [{ updated: 'desc' }] }).exec();
-check('find all sorted', all.length === 2 && all[0].id === 'n2');
-const tagged = await db.notes.find({ selector: { tags: { $in: ['work'] } } }).exec();
-check('array index query ($in)', tagged.length === 1 && tagged[0].id === 'n1');
-const notArchived = await db.notes.find({ selector: { trashed: false, archived: false } }).exec();
-check('boolean filter', notArchived.length === 1 && notArchived[0].id === 'n1');
+const all = useNotesQuery(ref({ sort: 'updated' }));
+check('query returns both notes, newest first', all.list.value.length === 2 && all.list.value[0].id === b.id);
+
+const tagged = useNotesQuery(ref({ tag: 'work' }));
+check('tag filter', tagged.list.value.length === 1 && tagged.list.value[0].id === a.id);
+
+const notArchived = useNotesQuery(ref({ archived: false }));
+check('archived filter', notArchived.list.value.length === 2);
+
+console.log('— update is reactive + persisted');
+await notes.updateNote(a.id, { title: 'Hello edited' });
+const sameObject = noteList.find((n) => n.id === a.id);
+check('in-memory object updated in place', sameObject.title === 'Hello edited');
+const reopened = await (await getDB()).notes.get(a.id);
+check('write reached the database', reopened.title === 'Hello edited');
 
 console.log('— attachments');
-const payload = new TextEncoder().encode('fake-audio-bytes-0123456789');
-const rxAtt = await note.putAttachmentBase64({ id: 'att1', data: Buffer.from(payload).toString('base64'), type: 'audio/webm' });
-const attB64 = await rxAtt.getDataBase64();
-check('attachment roundtrip', Buffer.from(attB64, 'base64').length === payload.length);
-await rxAtt.doc.incrementalPatch({ atts: [{ id: 'att1', name: 'rec.webm', type: 'audio/webm', size: payload.length }] });
-const fresh = await db.notes.findOne('n1').exec();
-check('attachment metadata patch', fresh.atts.length === 1 && fresh.atts[0].name === 'rec.webm');
+const bytes = new TextEncoder().encode('fake-audio-bytes-0123456789');
+await notes.addAttachment(a, { id: 'att1', name: 'rec.webm', type: 'audio/webm', data: bytes });
+await getDB();
+const withAtt = noteList.find((n) => n.id === a.id);
+check('attachment metadata', withAtt.atts.length === 1 && withAtt.atts[0].name === 'rec.webm');
+const back = await notes.getAttachmentBytes(withAtt, 'att1');
+check('attachment roundtrip', back.length === bytes.length);
+const attUrl = await notes.getAttachmentUrl(withAtt, 'att1');
+check('attachment url', typeof attUrl === 'string' && attUrl.startsWith('blob:'));
+await notes.removeAttachment(withAtt, 'att1');
+check('attachment removed', noteList.find((n) => n.id === a.id).atts.length === 0);
 
-console.log('— patch + soft delete');
-await fresh.incrementalPatch({ trashed: true, deletedAt: now + 5 });
-const trashed = await db.notes.find({ selector: { trashed: true } }).exec();
-check('trash query', trashed.length === 1);
-const fresh2 = await db.notes.findOne('n1').exec();
-await fresh2.incrementalRemove(); // cascades attachments
-check('purge', (await db.notes.findOne('n1').exec()) === null);
+console.log('— version history');
+await notes.updateNote(a.id, { content: '<p>first edit</p>' });
+await snapshotNote(noteList.find((n) => n.id === a.id), { force: true });
+await notes.updateNote(a.id, { content: '<p>second edit</p>' });
+await snapshotNote(noteList.find((n) => n.id === a.id), { force: true });
+const revs = await listRevisions(a.id);
+check('two snapshots kept', revs.length === 2);
+check('newest snapshot first', revs[0].content.includes('second edit') && revs[1].content.includes('first edit'));
+await notes.purgeNote(a.id);
+check('purge removes revisions', (await listRevisions(a.id)).length === 0);
 
-console.log('— version history collection');
-await db.revisions.insert({
-  id: 'rev1',
-  noteId: 'n2',
-  title: 'Second',
-  content: '<p>old</p>',
-  contentText: 'old',
-  created: now,
-  reason: 'edit'
-});
-await db.revisions.insert({
-  id: 'rev2',
-  noteId: 'n2',
-  title: 'Second',
-  content: '<p>newer</p>',
-  contentText: 'newer',
-  created: now + 10,
-  reason: 'edit'
-});
-const revs = await db.revisions
-  .find({ selector: { noteId: 'n2' }, sort: [{ created: 'desc' }] })
-  .exec();
-check('revisions stored per note', revs.length === 2 && revs[0].id === 'rev2');
-check('revision content preserved', revs[1].content.includes('old'));
+console.log('— trash / restore / soft-delete purge window');
+await notes.trashNote(b.id);
+check('trash flag set', noteList.find((n) => n.id === b.id).trashed === true);
+const trashQuery = useNotesQuery(ref({ trash: true }));
+check('trash query', trashQuery.list.value.length === 1);
+await notes.restoreNote(b.id);
+check('restore', noteList.find((n) => n.id === b.id).trashed === false);
+check('auto-purge keeps recent trash', (await notes.autoPurgeTrash(30)) === 0);
 
-console.log('— vault crypto (WebCrypto AES-GCM + PBKDF2)');
-const subtle = globalThis.crypto.subtle;
-const salt = globalThis.crypto.getRandomValues(new Uint8Array(16));
-const material = await subtle.importKey('raw', new TextEncoder().encode('hunter22'), 'PBKDF2', false, ['deriveKey']);
-const key = await subtle.deriveKey(
-  { name: 'PBKDF2', salt, iterations: 250000, hash: 'SHA-256' },
-  material,
-  { name: 'AES-GCM', length: 256 },
-  false,
-  ['encrypt', 'decrypt']
-);
-const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
-const secret = JSON.stringify({ title: 'top secret', content: '<p>stuff</p>' });
-const ct = await subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(secret));
-const pt = await subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
-check('encrypt/decrypt roundtrip', new TextDecoder().decode(pt) === secret);
+console.log('— settings');
+await setSetting('startup', 'notes');
+check('setting roundtrip', (await getSetting('startup')) === 'notes');
+check('setting fallback', (await getSetting('missing', 42)) === 42);
+
+console.log('— backup / restore');
+const backup = await notes.exportBackup();
+const parsed = JSON.parse(backup);
+check('backup carries notes + notebooks', parsed.app === 'inkwell' && parsed.notes.length === 1 && parsed.notebooks.length >= 1);
+await notes.purgeNote(b.id);
+check('note really gone before import', noteList.length === 0);
+const imported = await notes.importBackup(backup);
+check('import restores the note', imported === 1 && noteList.length === 1);
+
+console.log('— hashtags become tags');
+const { extractHashtags, mergeTags } = await import('../src/utils/tags.js');
+check('simple hashtag', extractHashtags('buy milk #errands').includes('errands'));
+check('start of line', extractHashtags('#idea first thought').includes('idea'));
+check('mid-word hash ignored', extractHashtags('see page#anchor').length === 0);
+check('numeric tag ignored', extractHashtags('#2026 goals').length === 0);
+check('dedupe', extractHashtags('#a #a #b').join(',') === 'a,b');
+check('trailing dash trimmed', extractHashtags('tag #work-').join(',') === 'work');
+check('merge keeps existing', mergeTags(['keep'], ['new']).join(',') === 'keep,new');
+check('merge dedupes', mergeTags(['a'], ['a', 'b']).join(',') === 'a,b');
+
+const grocery = await notes.createNote({ title: 'Groceries', content: '<p>milk #errands #home</p>' });
+check('create picks up hashtags', grocery.tags.join(',') === 'errands,home');
+await notes.saveNote(grocery.id, { content: '<p>milk #errands #home and #later</p>' });
+check('edit adds new hashtag only', noteList.find((n) => n.id === grocery.id).tags.join(',') === 'errands,home,later');
+await notes.updateNote(grocery.id, { tags: ['errands'] });
+await notes.saveNote(grocery.id, { title: 'Groceries, renamed' });
+check('title-only edit keeps the trimmed tags', noteList.find((n) => n.id === grocery.id).tags.join(',') === 'errands');
+await notes.purgeNote(grocery.id);
 
 console.log('— htmlToText');
-check('strip html', htmlToText('<h1>T</h1><p>a<br>b</p>') .includes('T'));
+check('strip html', htmlToText('<h1>T</h1><p>a<br>b</p>').includes('T'));
+check('uid prefix', uid('rev').startsWith('rev_'));
 
-await db.remove();
 console.log(failures ? `\n${failures} FAILURES` : '\nALL DATA-LAYER TESTS PASSED');
 process.exit(failures ? 1 : 0);

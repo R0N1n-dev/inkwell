@@ -5,7 +5,8 @@
  * lets us check the password without storing it.
  */
 import { ref } from 'vue';
-import { getDB } from '../db/database.js';
+import { getDB, noteList } from '../db/database.js';
+import { updateNote } from '../db/notes.js';
 import { getSetting, setSetting } from '../db/settings.js';
 import { base64ToBytes, bytesToBase64 } from '../utils/format.js';
 
@@ -124,17 +125,16 @@ export async function decryptPayload(cipherJson) {
 export async function changeVaultPassword(oldPass, newPass) {
   const ok = await unlockVault(oldPass);
   if (!ok) return false;
-  const db = await getDB();
-  const locked = await db.notes.find({ selector: { locked: true } }).exec();
+  await getDB();
+  const locked = noteList.filter((n) => n.locked);
   const payloads = [];
-  for (const doc of locked) {
-    payloads.push({ id: doc.id, payload: await decryptPayload(doc.cipher) });
+  for (const note of locked) {
+    payloads.push({ id: note.id, payload: await decryptPayload(note.cipher) });
   }
   lockVault();
   await setupVault(newPass);
   for (const { id, payload } of payloads) {
-    const doc = await db.notes.findOne(id).exec();
-    if (doc) await doc.incrementalPatch({ cipher: await encryptPayload(payload), updated: Date.now() });
+    await updateNote(id, { cipher: await encryptPayload(payload), updated: Date.now() });
   }
   return true;
 }

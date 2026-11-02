@@ -20,7 +20,7 @@ globalThis.MutationObserver = dom.window.MutationObserver;
 globalThis.getSelection = () => dom.window.getSelection();
 globalThis.getComputedStyle = dom.window.getComputedStyle.bind(dom.window);
 
-const { getDB } = await import('../src/db/database.js');
+const { getDB, notebookList, commitNote } = await import('../src/db/database.js');
 const {
   createNote,
   getNote,
@@ -77,7 +77,7 @@ check('duplicate copies attachment metadata', copyFresh.atts.length === 1 && cop
 const copyBytes = await getAttachmentBytes(copyFresh, 'att_test');
 check('duplicate copies attachment bytes', new TextDecoder().decode(copyBytes) === 'attachment body');
 
-const locked = await db.notes.insert({
+const locked = await commitNote({
   id: 'n_locked',
   title: '',
   content: '',
@@ -119,7 +119,7 @@ console.log('— daily journal');
 const today1 = await getOrCreateDailyNote();
 const today2 = await getOrCreateDailyNote();
 check('daily note is reused', today1.id === today2.id);
-check('daily note is in Journal notebook', !!(await db.notebooks.findOne(today1.notebookId).exec()));
+check('daily note is in Journal notebook', notebookList.some((nb) => nb.id === today1.notebookId));
 check('daily note has checklist content', today1.content.includes('data-list'));
 check('findTodaysNote matches', (await findTodaysNote())?.id === today1.id);
 

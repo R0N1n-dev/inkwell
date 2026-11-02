@@ -1,9 +1,9 @@
 <script setup>
-import { computed, inject, onMounted, onUnmounted, ref } from 'vue';
+import { computed, inject, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useToast } from 'primevue/usetoast';
 import EmptyState from '../components/EmptyState.vue';
-import { getDB } from '../db/database.js';
+import { noteList } from '../db/database.js';
 import { saveNote } from '../db/notes.js';
 import { extractTasks, toggleTaskInHtml } from '../utils/tasks.js';
 
@@ -11,26 +11,10 @@ const router = useRouter();
 const toast = useToast();
 const openSidebar = inject('openSidebar', () => {});
 
-const docs = ref([]);
+const docs = computed(() => noteList.filter((n) => !n.trashed && !n.locked && !n.archived));
 const filter = ref('open');
 const term = ref('');
 const busy = ref('');
-let sub = null;
-
-async function load() {
-  const db = await getDB();
-  docs.value = await db.notes
-    .find({ selector: { trashed: false, locked: false, archived: false } })
-    .exec();
-}
-
-onMounted(async () => {
-  await load();
-  const db = await getDB();
-  sub = db.notes.$.subscribe(() => load());
-});
-
-onUnmounted(() => sub?.unsubscribe());
 
 const allTasks = computed(() => {
   const out = [];
@@ -112,13 +96,13 @@ function openNote(noteId) {
 <template>
   <div class="app-shell">
     <header class="app-topbar">
-      <button class="icon-btn" @click="openSidebar()"><i class="pi pi-bars"></i></button>
+      <button class="icon-btn" @click="openSidebar()"><i class="bx bx-menu"></i></button>
       <div class="title">
         Tasks
         <div class="subtitle">{{ stats.open }} open · {{ stats.done }} done</div>
       </div>
       <button class="icon-btn" @click="router.push({ name: 'editor', params: { id: 'new' } })" title="New checklist note">
-        <i class="pi pi-plus"></i>
+        <i class="bx bx-plus"></i>
       </button>
     </header>
 
@@ -148,7 +132,7 @@ function openNote(noteId) {
     <div class="scroll-area">
       <EmptyState
         v-if="!groups.length"
-        icon="pi pi-check-square"
+        icon="bx bx-check-square"
         :title="stats.total ? 'Nothing here' : 'No tasks yet'"
         :text="stats.total ? 'Try another filter or clear the search.' : 'Add a checklist to any note with the checklist button, then tick items off here — across all notes.'"
       />
@@ -158,7 +142,7 @@ function openNote(noteId) {
           <span v-if="group.color" class="task-color" :class="`c-${group.color}`"></span>
           <span class="task-group-title">{{ group.title }}</span>
           <span class="task-group-count">{{ group.items.filter((t) => !t.checked).length }} open</span>
-          <i class="pi pi-arrow-right" style="font-size: 11px"></i>
+          <i class="bx bx-right-arrow" style="font-size: 11px"></i>
         </button>
         <div class="task-list">
           <button
@@ -169,7 +153,7 @@ function openNote(noteId) {
             @click="toggle(task)"
           >
             <span class="task-box" :class="{ checked: task.checked }">
-              <i v-if="task.checked" class="pi pi-check"></i>
+              <i v-if="task.checked" class="bx bx-check"></i>
             </span>
             <span class="task-text">{{ task.text || 'Empty task' }}</span>
             <span v-if="task.checked" class="task-state">done</span>

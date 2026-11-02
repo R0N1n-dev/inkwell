@@ -23,7 +23,7 @@ import Divider from 'primevue/divider';
 import Badge from 'primevue/badge';
 import InputNumber from 'primevue/inputnumber';
 
-import 'primeicons/primeicons.css';
+import 'boxicons/css/boxicons.min.css';
 import 'quill/dist/quill.snow.css';
 import './styles/app.css';
 

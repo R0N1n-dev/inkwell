@@ -3,103 +3,96 @@
  *
  * Snapshots are captured before an edit lands (throttled so autosave does not
  * create a row every 700 ms) and kept per note. They live in the same local
- * IndexedDB database — nothing leaves the device.
+ * database — nothing leaves the device.
  */
-import { getDB, uid } from './database.js';
+import { getDB, noteList, uid, plain, commitNote } from './database.js';
 
 /** Minimum time between automatic snapshots of the same note. */
 export const REVISION_GAP_MS = 2 * 60 * 1000;
 /** Newest snapshots kept per note. */
 export const MAX_REVISIONS_PER_NOTE = 25;
 
-async function newest(noteId) {
+/** Newest first. */
+async function rowsFor(noteId) {
   const db = await getDB();
-  const rows = await db.revisions
-    .find({ selector: { noteId }, sort: [{ created: 'desc' }], limit: 1 })
-    .exec();
-  return rows[0] || null;
+  const rows = await db.revisions.where('noteId').equals(noteId).toArray();
+  return rows.sort((a, b) => b.created - a.created);
 }
 
 async function prune(noteId) {
   const db = await getDB();
-  const rows = await db.revisions
-    .find({ selector: { noteId }, sort: [{ created: 'desc' }] })
-    .exec();
-  for (const row of rows.slice(MAX_REVISIONS_PER_NOTE)) await row.incrementalRemove();
+  const rows = await rowsFor(noteId);
+  const extra = rows.slice(MAX_REVISIONS_PER_NOTE);
+  if (extra.length) await db.revisions.bulkDelete(extra.map((r) => r.id));
 }
 
 /**
  * Capture the current state of a note. Returns the new revision id or null
  * when nothing meaningful changed / snapshot was throttled.
  */
-export async function snapshotNote(doc, { force = false, reason = 'edit' } = {}) {
-  if (!doc || doc.locked) return null; // never persist plaintext for vault notes
-  const last = await newest(doc.id);
+export async function snapshotNote(note, { force = false, reason = 'edit' } = {}) {
+  if (!note || note.locked) return null; // never persist plaintext for vault notes
+  const last = (await rowsFor(note.id))[0] || null;
   if (!force) {
     if (last && Date.now() - last.created < REVISION_GAP_MS) return null;
-    if (last && last.title === doc.title && last.content === doc.content) return null;
+    if (last && last.title === note.title && last.content === note.content) return null;
   }
-  if (!doc.content && !doc.title) return null;
+  if (!note.content && !note.title) return null;
 
   const db = await getDB();
-  const id = uid('rev');
-  await db.revisions.insert({
-    id,
-    noteId: doc.id,
-    title: doc.title || '',
-    content: doc.content || '',
-    contentText: doc.contentText || '',
+  const row = {
+    id: uid('rev'),
+    noteId: note.id,
+    title: note.title || '',
+    content: note.content || '',
+    contentText: note.contentText || '',
     created: Date.now(),
     reason
-  });
-  await prune(doc.id);
-  return id;
+  };
+  await db.revisions.put(row);
+  await prune(note.id);
+  return row.id;
 }
 
 export async function listRevisions(noteId) {
-  const db = await getDB();
-  return db.revisions
-    .find({ selector: { noteId }, sort: [{ created: 'desc' }] })
-    .exec();
+  return rowsFor(noteId);
 }
 
 export async function countRevisions(noteId) {
-  const db = await getDB();
-  return db.revisions.count({ selector: { noteId } }).exec();
+  return (await rowsFor(noteId)).length;
 }
 
 /** Restore a snapshot. The pre-restore state is snapshotted first. */
 export async function restoreRevision(noteId, revisionId) {
   const db = await getDB();
-  const [doc, rev] = await Promise.all([
-    db.notes.findOne(noteId).exec(),
-    db.revisions.findOne(revisionId).exec()
-  ]);
-  if (!doc || !rev) return null;
-  await snapshotNote(doc, { force: true, reason: 'restore' });
-  await doc.incrementalPatch({
+  const note = noteList.find((n) => n.id === noteId);
+  const rev = await db.revisions.get(revisionId);
+  if (!note || !rev) return null;
+  await snapshotNote(note, { force: true, reason: 'restore' });
+  return commitNote({
+    ...plain(note),
     title: rev.title || '',
     content: rev.content || '',
     contentText: rev.contentText || '',
     updated: Date.now()
   });
-  return doc;
 }
 
 export async function purgeRevisions(noteId) {
   const db = await getDB();
-  const rows = await db.revisions.find({ selector: { noteId } }).exec();
-  for (const row of rows) await row.incrementalRemove();
+  await db.revisions.where('noteId').equals(noteId).delete();
 }
 
 /** Global cleanup — keeps history bounded even after bulk imports. */
 export async function pruneAllRevisions() {
   const db = await getDB();
-  const rows = await db.revisions.find({ selector: {}, sort: [{ created: 'desc' }] }).exec();
+  const rows = (await db.revisions.toArray()).sort((a, b) => b.created - a.created);
   const seen = new Map();
+  const doomed = [];
   for (const row of rows) {
     const n = (seen.get(row.noteId) || 0) + 1;
     seen.set(row.noteId, n);
-    if (n > MAX_REVISIONS_PER_NOTE) await row.incrementalRemove();
+    if (n > MAX_REVISIONS_PER_NOTE) doomed.push(row.id);
   }
+  if (doomed.length) await db.revisions.bulkDelete(doomed);
 }

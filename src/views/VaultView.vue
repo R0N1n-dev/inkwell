@@ -87,13 +87,13 @@ async function doChange() {
 <template>
   <div class="app-shell">
     <header class="app-topbar">
-      <button class="icon-btn" @click="openSidebar()"><i class="pi pi-bars"></i></button>
+      <button class="icon-btn" @click="openSidebar()"><i class="bx bx-menu"></i></button>
       <div class="title">Vault<div class="subtitle">encrypted on this device</div></div>
       <button v-if="vaultUnlocked" class="icon-btn" title="Lock vault" @click="lockVault()">
-        <i class="pi pi-lock"></i>
+        <i class="bx bx-lock-alt"></i>
       </button>
       <button v-if="vaultUnlocked && vaultConfigured" class="icon-btn" title="Change password" @click="changeDlg = true">
-        <i class="pi pi-key"></i>
+        <i class="bx bx-key"></i>
       </button>
     </header>
 
@@ -101,7 +101,7 @@ async function doChange() {
       <!-- 1. not configured -->
       <template v-if="!vaultConfigured">
         <div class="vault-hero">
-          <div class="shield"><i class="pi pi-shield"></i></div>
+          <div class="shield"><i class="bx bx-shield"></i></div>
           <h3 style="margin: 0">Create your vault</h3>
           <p class="muted" style="margin: 0; max-width: 300px; line-height: 1.55">
             Locked notes are encrypted on-device with AES-256-GCM. The password never leaves this
@@ -111,14 +111,14 @@ async function doChange() {
         <div class="vault-form">
           <InputText v-model="password" type="password" placeholder="Master password (min 6 chars)" />
           <InputText v-model="password2" type="password" placeholder="Repeat password" @keyup.enter="doSetup" />
-          <Button :loading="busy" label="Create vault" icon="pi pi-shield" @click="doSetup" />
+          <Button :loading="busy" label="Create vault" icon="bx bx-shield" @click="doSetup" />
         </div>
       </template>
 
       <!-- 2. configured but locked -->
       <template v-else-if="!vaultUnlocked">
         <div class="vault-hero">
-          <div class="shield"><i class="pi pi-lock"></i></div>
+          <div class="shield"><i class="bx bx-lock-alt"></i></div>
           <h3 style="margin: 0">Vault locked</h3>
           <p class="muted" style="margin: 0">{{ lockedNotes.length }} encrypted note(s) inside</p>
         </div>
@@ -130,7 +130,7 @@ async function doChange() {
             autofocus
             @keyup.enter="doUnlock"
           />
-          <Button :loading="busy" label="Unlock" icon="pi pi-lock-open" @click="doUnlock" />
+          <Button :loading="busy" label="Unlock" icon="bx bx-lock-open" @click="doUnlock" />
         </div>
       </template>
 
@@ -138,7 +138,7 @@ async function doChange() {
       <template v-else>
         <EmptyState
           v-if="!lockedNotes.length"
-          icon="pi pi-shield"
+          icon="bx bx-shield"
           title="Vault is empty"
           text="Open any note and tap the lock icon to encrypt it into the vault."
         />
@@ -148,7 +148,7 @@ async function doChange() {
               <NoteCard :doc="doc" />
             </div>
             <button class="icon-btn" title="Remove from vault" @click="takeOutOfVault(doc)">
-              <i class="pi pi-lock-open"></i>
+              <i class="bx bx-lock-open"></i>
             </button>
           </div>
         </div>
@@ -160,7 +160,7 @@ async function doChange() {
         <InputText v-model="oldPass" type="password" placeholder="Current password" />
         <InputText v-model="newPass" type="password" placeholder="New password (min 6 chars)" />
         <InputText v-model="newPass2" type="password" placeholder="Repeat new password" />
-        <Button :loading="busy" label="Change password" icon="pi pi-key" @click="doChange" />
+        <Button :loading="busy" label="Change password" icon="bx bx-key" @click="doChange" />
       </div>
       <p class="muted" style="font-size: 12px">All locked notes will be re-encrypted with the new key.</p>
     </Dialog>

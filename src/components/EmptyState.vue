@@ -1,6 +1,6 @@
 <script setup>
 defineProps({
-  icon: { type: String, default: 'pi pi-inbox' },
+  icon: { type: String, default: 'bx bx-archive-in' },
   title: { type: String, default: 'Nothing here yet' },
   text: { type: String, default: '' }
 });

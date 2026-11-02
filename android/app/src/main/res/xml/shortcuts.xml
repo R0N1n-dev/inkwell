@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press the launcher icon: the three things you actually do from there. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="new_note"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_new"
+        android:shortcutShortLabel="@string/shortcut_new_short"
+        android:shortcutLongLabel="@string/shortcut_new_long">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="com.inkwell.notes"
+            android:targetClass="com.inkwell.notes.MainActivity">
+            <extra android:name="inkwell_action" android:value="new_note" />
+        </intent>
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="daily"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_daily"
+        android:shortcutShortLabel="@string/shortcut_daily_short"
+        android:shortcutLongLabel="@string/shortcut_daily_long">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="com.inkwell.notes"
+            android:targetClass="com.inkwell.notes.MainActivity">
+            <extra android:name="inkwell_action" android:value="daily" />
+        </intent>
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="search"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_search"
+        android:shortcutShortLabel="@string/shortcut_search_short"
+        android:shortcutLongLabel="@string/shortcut_search_long">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="com.inkwell.notes"
+            android:targetClass="com.inkwell.notes.MainActivity">
+            <extra android:name="inkwell_action" android:value="search" />
+        </intent>
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+</shortcuts>

@@ -95,7 +95,7 @@ function createNote(title) {
       </p>
 
       <section class="links-section">
-        <div class="links-heading"><i class="pi pi-arrow-up-right"></i> Links from this note</div>
+        <div class="links-heading"><i class="bx bx-link-external"></i> Links from this note</div>
         <div v-if="!outgoing.length" class="links-muted">No wiki links yet.</div>
         <button
           v-for="row in resolvedOut"
@@ -103,7 +103,7 @@ function createNote(title) {
           class="link-row"
           @click="openNote(row.note.id)"
         >
-          <i class="pi pi-file-edit"></i>
+          <i class="bx bx-edit-alt"></i>
           <span class="link-main">
             <span class="link-title">{{ row.note.title || 'Untitled' }}</span>
             <span class="link-sub">{{ excerpt(row.note.contentText, 70) || 'Empty note' }}</span>
@@ -111,7 +111,7 @@ function createNote(title) {
           <span class="link-meta">{{ relativeTime(row.note.updated) }}</span>
         </button>
         <div v-for="row in unresolvedOut" :key="row.title" class="link-row unresolved">
-          <i class="pi pi-question-circle"></i>
+          <i class="bx bx-help-circle"></i>
           <span class="link-main">
             <span class="link-title">{{ row.title }}</span>
             <span class="link-sub">No note with this title</span>
@@ -121,10 +121,10 @@ function createNote(title) {
       </section>
 
       <section class="links-section">
-        <div class="links-heading"><i class="pi pi-arrow-down-left"></i> Linked mentions</div>
+        <div class="links-heading"><i class="bx bx-link-external"></i> Linked mentions</div>
         <div v-if="!backlinks.length" class="links-muted">No other note links here yet.</div>
         <button v-for="doc in backlinks" :key="doc.id" class="link-row" @click="openNote(doc.id)">
-          <i class="pi pi-link"></i>
+          <i class="bx bx-link"></i>
           <span class="link-main">
             <span class="link-title">{{ doc.title || 'Untitled' }}</span>
             <span class="link-sub">{{ excerpt(doc.contentText, 70) }}</span>
@@ -134,11 +134,11 @@ function createNote(title) {
       </section>
 
       <section class="links-section">
-        <div class="links-heading"><i class="pi pi-plus"></i> Insert a link</div>
+        <div class="links-heading"><i class="bx bx-plus"></i> Insert a link</div>
         <input v-model="search" class="links-search" type="search" placeholder="Find a note…" />
         <div v-if="!filteredTargets.length" class="links-muted">No matching notes.</div>
         <button v-for="doc in filteredTargets" :key="doc.id" class="link-row insert" @click="insert(doc.title)">
-          <i class="pi pi-plus-circle"></i>
+          <i class="bx bx-plus-circle"></i>
           <span class="link-main">
             <span class="link-title">{{ doc.title || 'Untitled' }}</span>
             <span class="link-sub">{{ excerpt(doc.contentText, 60) || 'Empty note' }}</span>

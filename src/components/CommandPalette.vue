@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { getDB } from '../db/database.js';
+import { getDB, noteList } from '../db/database.js';
 import { getOrCreateDailyNote } from '../db/daily.js';
 import { loadTemplates } from '../utils/templates.js';
 import { excerpt, relativeTime } from '../utils/format.js';
@@ -19,34 +19,33 @@ const actions = [
   {
     label: 'New note',
     hint: 'Blank page',
-    icon: 'pi pi-plus',
+    icon: 'bx bx-plus',
     keywords: 'create write add',
     run: () => router.push({ name: 'editor', params: { id: 'new' } })
   },
   {
     label: "Today's journal",
     hint: 'Open or create the note for today',
-    icon: 'pi pi-sun',
+    icon: 'bx bx-sun',
     keywords: 'daily journal today diary',
     run: async () => {
       const doc = await getOrCreateDailyNote();
       router.push({ name: 'editor', params: { id: doc.id } });
     }
   },
-  { label: 'Tasks', hint: 'All checklists in one place', icon: 'pi pi-check-square', keywords: 'todo checklist', run: () => router.push({ name: 'tasks' }) },
-  { label: 'Insights', hint: 'Streak, heatmap and word counts', icon: 'pi pi-chart-bar', keywords: 'stats activity streak words', run: () => router.push({ name: 'insights' }) },
-  { label: 'Notebooks', icon: 'pi pi-folder', keywords: 'folders organize', run: () => router.push({ name: 'notebooks' }) },
-  { label: 'Tags', icon: 'pi pi-tags', keywords: 'labels organize', run: () => router.push({ name: 'tags' }) },
-  { label: 'Trash', icon: 'pi pi-trash', keywords: 'deleted restore', run: () => router.push({ name: 'trash' }) },
-  { label: 'Vault', icon: 'pi pi-shield', keywords: 'locked secret private', run: () => router.push({ name: 'vault' }) },
-  { label: 'Settings', icon: 'pi pi-cog', keywords: 'theme preferences backup', run: () => router.push({ name: 'settings' }) },
-  { label: 'Toggle dark mode', icon: 'pi pi-moon', keywords: 'theme light appearance', run: () => toggleDark() }
+  { label: 'Tasks', hint: 'All checklists in one place', icon: 'bx bx-check-square', keywords: 'todo checklist', run: () => router.push({ name: 'tasks' }) },
+  { label: 'Insights', hint: 'Streak, heatmap and word counts', icon: 'bx bx-bar-chart', keywords: 'stats activity streak words', run: () => router.push({ name: 'insights' }) },
+  { label: 'Notebooks', icon: 'bx bx-folder', keywords: 'folders organize', run: () => router.push({ name: 'notebooks' }) },
+  { label: 'Tags', icon: 'bx bx-purchase-tag', keywords: 'labels organize', run: () => router.push({ name: 'tags' }) },
+  { label: 'Trash', icon: 'bx bx-trash', keywords: 'deleted restore', run: () => router.push({ name: 'trash' }) },
+  { label: 'Vault', icon: 'bx bx-shield', keywords: 'locked secret private', run: () => router.push({ name: 'vault' }) },
+  { label: 'Settings', icon: 'bx bx-cog', keywords: 'theme preferences backup', run: () => router.push({ name: 'settings' }) },
+  { label: 'Toggle dark mode', icon: 'bx bx-moon', keywords: 'theme light appearance', run: () => toggleDark() }
 ];
 
 async function refresh() {
-  const db = await getDB();
-  const docs = await db.notes.find({ selector: { trashed: false }, sort: [{ updated: 'desc' }] }).exec();
-  notes.value = docs;
+  await getDB();
+  notes.value = noteList.filter((n) => !n.trashed).sort((a, b) => b.updated - a.updated);
   templates.value = await loadTemplates();
 }
 
@@ -86,7 +85,7 @@ const results = computed(() => {
       kind: 'template',
       label: tpl.name,
       hint: tpl.description || 'Template',
-      icon: tpl.icon || 'pi pi-bookmark',
+      icon: tpl.icon || 'bx bx-bookmark',
       run: () => router.push({ name: 'editor', params: { id: 'new' }, query: { template: tpl.id } })
     });
   }
@@ -103,7 +102,7 @@ const results = computed(() => {
       hint: locked
         ? 'Open the vault to read it'
         : excerpt(doc.contentText, 90) || (doc.archived ? 'Archived note' : 'Empty note'),
-      icon: locked ? 'pi pi-lock' : doc.pinned ? 'pi pi-thumbtack' : 'pi pi-file-edit',
+      icon: locked ? 'bx bx-lock-alt' : doc.pinned ? 'bx bx-pin' : 'bx bx-edit-alt',
       meta: relativeTime(doc.updated),
       run: () => router.push({ name: 'editor', params: { id: doc.id } })
     });
@@ -165,7 +164,7 @@ function onKey(event) {
     <div v-if="paletteOpen" class="cmdk-backdrop" @mousedown.self="closePalette">
       <div class="cmdk" role="dialog" aria-modal="true" aria-label="Quick switcher">
         <div class="cmdk-input">
-          <i class="pi pi-search"></i>
+          <i class="bx bx-search"></i>
           <input
             ref="input"
             v-model="query"
@@ -175,7 +174,6 @@ function onKey(event) {
             spellcheck="false"
             @keydown="onKey"
           />
-          <kbd>ESC</kbd>
         </div>
 
         <div class="cmdk-list">
@@ -201,7 +199,7 @@ function onKey(event) {
           </div>
 
           <div v-if="!flat.length" class="cmdk-empty">
-            <i class="pi pi-search"></i>
+            <i class="bx bx-search"></i>
             <span>No notes or commands match “{{ query }}”.</span>
           </div>
         </div>

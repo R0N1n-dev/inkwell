@@ -5,7 +5,8 @@ import { useToast } from 'primevue/usetoast';
 import { useConfirm } from 'primevue/useconfirm';
 import EmptyState from '../components/EmptyState.vue';
 import { useTagCounts } from '../composables/useQueries.js';
-import { getDB } from '../db/database.js';
+import { noteList } from '../db/database.js';
+import { updateNote } from '../db/notes.js';
 
 const router = useRouter();
 const toast = useToast();
@@ -19,11 +20,11 @@ function removeTag(tag) {
   confirm.require({
     header: `Remove #${tag}?`,
     message: 'The tag will be removed from all notes. Notes themselves are kept.',
-    icon: 'pi pi-tag',
+    icon: 'bx bx-purchase-tag',
     accept: async () => {
-      const db = await getDB();
-      const docs = await db.notes.find({ selector: { tags: { $in: [tag] } } }).exec();
-      for (const d of docs) await d.incrementalPatch({ tags: d.tags.filter((t) => t !== tag) });
+      for (const n of noteList.filter((n) => (n.tags || []).includes(tag))) {
+        await updateNote(n.id, { tags: n.tags.filter((t) => t !== tag) });
+      }
       toast.add({ severity: 'success', summary: 'Tag removed', life: 1500 });
     }
   });
@@ -33,7 +34,7 @@ function removeTag(tag) {
 <template>
   <div class="app-shell">
     <header class="app-topbar">
-      <button class="icon-btn" @click="openSidebar()"><i class="pi pi-bars"></i></button>
+      <button class="icon-btn" @click="openSidebar()"><i class="bx bx-menu"></i></button>
       <div class="title">Tags</div>
     </header>
     <div class="scroll-area">
@@ -43,7 +44,7 @@ function removeTag(tag) {
           <span class="tag-name">#{{ tag }}</span>
           <span class="tag-count">{{ count }}</span>
           <button class="icon-btn" style="width: 28px; height: 28px" @click.stop="removeTag(tag)">
-            <i class="pi pi-times"></i>
+            <i class="bx bx-x"></i>
           </button>
         </div>
       </div>

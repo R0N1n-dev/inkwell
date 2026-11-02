@@ -12,10 +12,10 @@ import {
 } from './platform/cap.js';
 import { initIncomingActions } from './platform/sharein.js';
 import { initNotifications, sweepDueReminders } from './platform/notify.js';
-import { watchWidgets } from './platform/widgets.js';
+import { watchWidgets, drainQuickCaptures, quickCaptureNoteMap } from './platform/widgets.js';
 import { lockVault, vaultUnlocked } from './crypto/vault.js';
 import { getSetting } from './db/settings.js';
-import { createNote, addAttachment, autoPurgeTrash } from './db/notes.js';
+import { createNote, addAttachment, autoPurgeTrash, updateNote } from './db/notes.js';
 import { getOrCreateDailyNote } from './db/daily.js';
 import { dataUrlToBytes, htmlToText } from './utils/format.js';
 import { paletteOpen, openPalette, closePalette } from './composables/usePalette.js';
@@ -37,8 +37,26 @@ function routeForAction(action) {
     case 'new_note':
       router.push({ name: 'editor', params: { id: 'new' } });
       break;
-    case 'open_note':
-      router.push({ name: 'editor', params: { id: action.id } });
+    case 'daily':
+      getOrCreateDailyNote()
+        .then((doc) => router.push({ name: 'editor', params: { id: doc.id } }))
+        .catch(() => router.push({ name: 'editor', params: { id: 'new' } }));
+      break;
+    case 'open_note': {
+      // Rows captured from the widget carry a "qc:<timestamp>" id until the
+      // capture has been imported; open the note it turned into instead.
+      const id = quickCaptureNoteMap.get(action.id) || action.id;
+      if (id && !String(id).startsWith('qc:')) {
+        router.push({ name: 'editor', params: { id } });
+      } else {
+        router.push({ name: 'notes' });
+      }
+      break;
+    }
+    case 'search':
+      // Launcher shortcut: straight into the quick switcher.
+      router.replace({ name: 'notes' });
+      openPalette();
       break;
     case 'share_text':
       handleSharedText(action.text || '');
@@ -77,13 +95,28 @@ async function handleSharedMedia(action) {
     }
   }
   if (action.text) {
-    await doc.incrementalPatch({ content: `<p>${action.text}</p>`, contentText: action.text });
+    await updateNote(doc.id, { content: `<p>${action.text}</p>`, contentText: action.text });
   }
   router.push({ name: 'editor', params: { id: doc.id } });
 }
 
+/**
+ * Hardware back. Capacitor delivers it through the App plugin, and also fires
+ * the legacy `document` "backbutton" event; listen to both so the flow survives
+ * either dispatch path. The two arrive together for one press, hence the guard.
+ */
+let lastBackAt = 0;
+
+function onNativeBack() {
+  const now = Date.now();
+  if (now - lastBackAt < 150) return;
+  lastBackAt = now;
+  handleBack();
+}
+
 async function initBackHandling() {
-  backHandle = await onBackButton(handleBack);
+  document.addEventListener('backbutton', onNativeBack);
+  backHandle = await onBackButton(onNativeBack);
 }
 
 /* ------------------------------------------------------------------ */
@@ -198,8 +231,12 @@ function onCmdKey(event) {
 
 onMounted(async () => {
   window.addEventListener('keydown', onCmdKey);
-  await initPlatform();
+  // Register back handling before any other boot work: while it is missing the
+  // system back press would leave the app instead of walking up the screens.
   await initBackHandling();
+  await initPlatform();
+  // Notes captured from the widget live in a native queue until here.
+  await drainQuickCaptures().catch(() => {});
   loadSavedSearches().catch(() => {});
 
   await initNotifications((extra) => {
@@ -222,7 +259,9 @@ onMounted(async () => {
         if (v && vaultUnlocked.value) lockVault();
       });
     } else {
-      drainActions?.();
+      drainQuickCaptures()
+        .catch(() => {})
+        .finally(() => drainActions?.());
       sweepDueReminders();
     }
   });
@@ -232,6 +271,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onCmdKey);
+  document.removeEventListener('backbutton', onNativeBack);
   backHandle?.remove?.();
 });
 </script>
@@ -246,33 +286,59 @@ onUnmounted(() => {
     <AppSidebar v-model:visible="sidebarOpen" />
     <CommandPalette />
 
-    <Dialog
-      v-model:visible="exitPromptOpen"
-      modal
-      header="Exit Inkwell?"
-      :style="{ width: '360px', maxWidth: '90vw' }"
-    >
-      <div class="exit-dialog">
-        <div class="exit-icon"><i class="pi pi-power-off"></i></div>
-        <p>Your notes are saved on this device. Exit the app?</p>
+    <!-- Plain overlay, not a PrimeVue dialog: the last step of the back flow
+         must be visible no matter what else is on screen. -->
+    <Transition name="exit-fade">
+      <div v-if="exitPromptOpen" class="exit-mask" @click.self="exitPromptOpen = false">
+        <div class="exit-card" role="dialog" aria-modal="true" aria-labelledby="exit-title">
+          <div class="exit-icon"><i class="bx bx-power-off"></i></div>
+          <div class="exit-copy">
+            <h3 id="exit-title">Exit Inkwell?</h3>
+            <p>Your notes are saved on this device. Press back again to stay.</p>
+          </div>
+          <div class="exit-actions">
+            <button class="exit-btn ghost" @click="exitPromptOpen = false">Stay</button>
+            <button class="exit-btn danger" @click="confirmExit">
+              <i class="bx bx-power-off"></i> Exit
+            </button>
+          </div>
+        </div>
       </div>
-      <template #footer>
-        <Button label="Stay" text severity="secondary" @click="exitPromptOpen = false" />
-        <Button label="Exit" icon="pi pi-power-off" @click="confirmExit" />
-      </template>
-    </Dialog>
+    </Transition>
   </div>
 </template>
 
 <style scoped>
-.exit-dialog {
+.exit-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
   display: flex;
   align-items: center;
-  gap: 14px;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(8, 10, 14, 0.55);
+  backdrop-filter: blur(2px);
+}
+.exit-card {
+  width: 100%;
+  max-width: 340px;
+  padding: 20px;
+  border-radius: 20px;
+  background: var(--ink-surface);
+  border: 1px solid var(--ink-border);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+}
+.exit-copy h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink-text);
 }
 .exit-icon {
   width: 44px;
   height: 44px;
+  margin-bottom: 12px;
   border-radius: 14px;
   background: var(--ink-accent-soft);
   color: var(--ink-accent);
@@ -280,12 +346,46 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   font-size: 18px;
-  flex: none;
 }
-.exit-dialog p {
+.exit-copy p {
   margin: 0;
   font-size: 13.5px;
   line-height: 1.5;
   color: var(--ink-text-muted);
+}
+.exit-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+.exit-btn {
+  flex: 1;
+  height: 44px;
+  border-radius: 13px;
+  border: 1px solid var(--ink-border);
+  background: var(--ink-surface-2);
+  color: var(--ink-text);
+  font-size: 14px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.exit-btn.danger {
+  background: var(--ink-accent);
+  border-color: transparent;
+  color: #0b1412;
+}
+.exit-btn:active {
+  transform: scale(0.98);
+}
+.exit-fade-enter-active,
+.exit-fade-leave-active {
+  transition: opacity 0.16s ease;
+}
+.exit-fade-enter-from,
+.exit-fade-leave-to {
+  opacity: 0;
 }
 </style>

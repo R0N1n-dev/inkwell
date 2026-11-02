@@ -3,8 +3,8 @@ import { ref } from 'vue';
 
 const props = defineProps({
   disabled: Boolean,
-  leftIcon: { type: String, default: 'pi pi-box' },
-  rightIcon: { type: String, default: 'pi pi-trash' },
+  leftIcon: { type: String, default: 'bx bx-archive' },
+  rightIcon: { type: String, default: 'bx bx-trash' },
   leftColor: { type: String, default: '#3E63DD' },
   rightColor: { type: String, default: '#E5484D' }
 });

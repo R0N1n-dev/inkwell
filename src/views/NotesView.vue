@@ -234,28 +234,28 @@ const optionsMenu = ref(null);
 const menuItems = computed(() => [
   {
     label: sortBy.value === 'updated' ? '✓ Modified date' : 'Modified date',
-    icon: 'pi pi-history',
+    icon: 'bx bx-history',
     command: () => setSort('updated')
   },
   {
     label: sortBy.value === 'created' ? '✓ Created date' : 'Created date',
-    icon: 'pi pi-calendar',
+    icon: 'bx bx-calendar',
     command: () => setSort('created')
   },
   {
     label: sortBy.value === 'title' ? '✓ Title' : 'Title',
-    icon: 'pi pi-sort-alpha-down',
+    icon: 'bx bx-sort-a-z',
     command: () => setSort('title')
   },
   { separator: true },
   {
     label: viewMode.value === 'list' ? 'Grid view' : 'List view',
-    icon: viewMode.value === 'list' ? 'pi pi-table' : 'pi pi-list',
+    icon: viewMode.value === 'list' ? 'bx bx-grid-alt' : 'bx bx-list-ul',
     command: toggleView
   },
   { separator: true },
-  { label: 'Save this view', icon: 'pi pi-bookmark', command: saveCurrentSearch },
-  { label: 'Quick switcher', icon: 'pi pi-bolt', command: openPalette }
+  { label: 'Save this view', icon: 'bx bx-bookmark', command: saveCurrentSearch },
+  { label: 'Quick switcher', icon: 'bx bx-bolt-circle', command: openPalette }
 ]);
 
 async function saveCurrentSearch() {
@@ -294,10 +294,10 @@ async function toggleView() {
   <div class="app-shell">
     <header class="app-topbar">
       <button v-if="!searching" class="icon-btn" @click="openSidebar()">
-        <i class="pi pi-bars"></i>
+        <i class="bx bx-menu"></i>
       </button>
       <button v-else class="icon-btn" @click="searching = false; term = ''">
-        <i class="pi pi-arrow-left"></i>
+        <i class="bx bx-arrow-back"></i>
       </button>
 
       <template v-if="!searching">
@@ -305,10 +305,10 @@ async function toggleView() {
           {{ selectionMode ? `${selected.size} selected` : title }}
           <div v-if="!selectionMode" class="subtitle">{{ shown.length }} note{{ shown.length === 1 ? '' : 's' }}</div>
         </div>
-        <button class="icon-btn" @click="searching = true"><i class="pi pi-search"></i></button>
-        <button class="icon-btn qs-btn" title="Quick switcher" @click="openPalette"><i class="pi pi-bolt"></i></button>
+        <button class="icon-btn" @click="searching = true"><i class="bx bx-search"></i></button>
+        <button class="icon-btn qs-btn" title="Quick switcher" @click="openPalette"><i class="bx bx-bolt-circle"></i></button>
         <button class="icon-btn" @click="optionsMenu?.toggle($event)">
-          <i class="pi pi-ellipsis-v"></i>
+          <i class="bx bx-dots-vertical"></i>
         </button>
       </template>
       <input
@@ -320,7 +320,7 @@ async function toggleView() {
         autofocus
       />
       <button v-if="searching" class="icon-btn" title="View options" @click="optionsMenu?.toggle($event)">
-        <i class="pi pi-ellipsis-v"></i>
+        <i class="bx bx-dots-vertical"></i>
       </button>
       <Popover ref="optionsMenu">
         <Menu :model="menuItems" class="border-none" style="max-height: 70vh; overflow-y: auto" />
@@ -340,8 +340,8 @@ async function toggleView() {
             v-for="doc in shown"
             :key="doc.id"
             :disabled="selectionMode"
-            :left-icon="route.query.archived === '1' ? 'pi pi-trash' : 'pi pi-trash'"
-            :right-icon="route.query.archived === '1' ? 'pi pi-box' : 'pi pi-box'"
+            :left-icon="route.query.archived === '1' ? 'bx bx-trash' : 'bx bx-trash'"
+            :right-icon="route.query.archived === '1' ? 'bx bx-archive' : 'bx bx-archive'"
             @swipe-left="onSwipeLeft(doc)"
             @swipe-right="onSwipeRight(doc)"
             @longpress="startSelection(doc)"
@@ -370,7 +370,7 @@ async function toggleView() {
     </div>
 
     <button v-if="!selectionMode" class="fab" @click="router.push({ name: 'editor', params: { id: 'new' } })">
-      <i class="pi pi-plus"></i>
+      <i class="bx bx-plus"></i>
     </button>
 
     <SelectionBar
@@ -382,7 +382,7 @@ async function toggleView() {
     <Toast group="undo" position="bottom">
       <template #message="slot">
         <div class="row" style="gap: 12px; align-items: center">
-          <i class="pi pi-info-circle" style="color: var(--ink-accent)"></i>
+          <i class="bx bx-info-circle" style="color: var(--ink-accent)"></i>
           <span style="flex: 1">{{ slot.message.summary }}</span>
           <Button label="Undo" text size="small" @click="doUndo" />
         </div>
