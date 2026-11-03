@@ -22,7 +22,7 @@ export async function buildWidgetSnapshot() {
   const ordered = [...pinned, ...rest].slice(0, 8);
 
   const total = await db.notes
-    .count({ selector: { trashed: false, locked: false } })
+    .count({ selector: { trashed: false, locked: false, archived: false } })
     .exec();
 
   return {
@@ -50,7 +50,14 @@ async function push() {
   }
 }
 
-export const syncWidgets = debounce(push, 600);
+/** Coalesce rapid edits, but keep widget refresh snappy. */
+export const syncWidgets = debounce(push, 200);
+
+/** Force a snapshot (used when the app backgrounds so nothing is left stale). */
+export async function syncWidgetsNow() {
+  syncWidgets.cancel();
+  await push();
+}
 
 /** Subscribe to note changes and keep widgets fresh. Call once at boot. */
 export async function watchWidgets() {

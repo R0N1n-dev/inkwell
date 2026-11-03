@@ -12,7 +12,7 @@ import {
 } from './platform/cap.js';
 import { initIncomingActions } from './platform/sharein.js';
 import { initNotifications, sweepDueReminders } from './platform/notify.js';
-import { watchWidgets } from './platform/widgets.js';
+import { watchWidgets, syncWidgetsNow } from './platform/widgets.js';
 import { lockVault, vaultUnlocked } from './crypto/vault.js';
 import { getSetting } from './db/settings.js';
 import { createNote, addAttachment, autoPurgeTrash } from './db/notes.js';
@@ -21,6 +21,7 @@ import { dataUrlToBytes, htmlToText } from './utils/format.js';
 import { paletteOpen, openPalette, closePalette } from './composables/usePalette.js';
 import { loadSavedSearches } from './composables/useSavedSearches.js';
 import { runBackInterceptors } from './composables/useBackIntercept.js';
+import { flushAll } from './composables/useFlushRegistry.js';
 
 const router = useRouter();
 const sidebarOpen = ref(false);
@@ -218,6 +219,11 @@ onMounted(async () => {
 
   onAppStateChange(({ isActive }) => {
     if (!isActive) {
+      // Persist the editor first, then rebuild widgets from the fresh DB state
+      // before Android can freeze the WebView.
+      flushAll()
+        .then(() => syncWidgetsNow())
+        .catch(() => {});
       getSetting('lockOnBackground', true).then((v) => {
         if (v && vaultUnlocked.value) lockVault();
       });

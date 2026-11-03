@@ -122,10 +122,15 @@ export function bytesToDataUrl(bytes, mime) {
 
 export function debounce(fn, ms = 250) {
   let t;
-  return (...args) => {
+  const wrapped = (...args) => {
     clearTimeout(t);
     t = setTimeout(() => fn(...args), ms);
   };
+  wrapped.cancel = () => {
+    clearTimeout(t);
+    t = null;
+  };
+  return wrapped;
 }
 
 export function noteFileName(title, ext = 'md') {

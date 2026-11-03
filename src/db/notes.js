@@ -15,7 +15,7 @@ export async function createNote(fields = {}) {
     id: uid('n'),
     title: fields.title || '',
     content,
-    contentText: htmlToText(content),
+    contentText: fields.contentText ?? htmlToText(content),
     created: now,
     updated: now,
     pinned: false,

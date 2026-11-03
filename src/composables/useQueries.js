@@ -3,7 +3,7 @@ import { getDB } from '../db/database.js';
 
 /**
  * Reactive note list for the current filter set.
- * Uses RxDB's Vue reactivity plugin (query.$$ -> Vue ref).
+ * Uses the RxDB query observable directly so the subscription is explicit.
  */
 export function useNotesQuery(filters) {
   const list = ref([]);
@@ -30,26 +30,20 @@ export function useNotesQuery(filters) {
       .sort([{ [sortKey]: 'desc' }])
       .limit(f.limit || 500);
 
-    const reactiveRef = query.$$;
-    const stop = watchRef(reactiveRef, (docs) => {
-      if (disposed) return;
-      list.value = docs || [];
+    const sub = query.$.subscribe((docs) => {
+      if (!disposed) list.value = docs || [];
     });
-    return stop;
+    return () => sub.unsubscribe();
   };
 
   let stopCurrent = null;
   const reload = async () => {
     stopCurrent?.();
-    stopCurrent = await build();
+    stopCurrent = null;
+    const unsub = await build();
+    if (disposed) unsub();
+    else stopCurrent = unsub;
   };
-
-  function watchRef(r, cb) {
-    // r is a Vue ref kept alive by RxDB; mirror it with a plain watcher
-    const { watch } = require_vue();
-    const un = watch(r, cb, { immediate: true, deep: false });
-    return un;
-  }
 
   reload();
 
@@ -61,17 +55,12 @@ export function useNotesQuery(filters) {
   return { list, reload };
 }
 
-// tiny indirection so the file stays import-cycle free
-import * as vue from 'vue';
-function require_vue() {
-  return vue;
-}
-
 /** Reactive counters for sidebar badges */
 export function useCounts() {
   const counts = ref({ notes: 0, favorites: 0, archived: 0, trash: 0, vault: 0, notebooks: 0 });
   let sub = null;
   let alive = true;
+  let scheduleTimer = null;
 
   const recompute = async () => {
     const db = await getDB();
@@ -90,11 +79,15 @@ export function useCounts() {
   (async () => {
     const db = await getDB();
     await recompute();
-    sub = db.notes.$.subscribe(() => recompute());
+    sub = db.notes.$.subscribe(() => {
+      clearTimeout(scheduleTimer);
+      scheduleTimer = setTimeout(recompute, 300);
+    });
   })();
 
   onScopeDispose(() => {
     alive = false;
+    clearTimeout(scheduleTimer);
     sub?.unsubscribe();
   });
 
@@ -109,7 +102,7 @@ export function useNotebooks() {
     const db = await getDB();
     const q = db.notebooks.find().sort([{ sortIndex: 'asc' }, { title: 'asc' }]);
     const r = q.$$;
-    un = vue.watch(r, (v) => (list.value = v || []), { immediate: true });
+    un = watch(r, (v) => (list.value = v || []), { immediate: true });
   })();
   onScopeDispose(() => un?.());
   return list;
@@ -119,6 +112,7 @@ export function useNotebooks() {
 export function useTagCounts() {
   const map = ref({});
   let sub = null;
+  let timer = null;
   const recompute = async () => {
     const db = await getDB();
     const docs = await db.notes.find({ selector: { trashed: false, locked: false } }).exec();
@@ -129,9 +123,15 @@ export function useTagCounts() {
   (async () => {
     const db = await getDB();
     await recompute();
-    sub = db.notes.$.subscribe(() => recompute());
+    sub = db.notes.$.subscribe(() => {
+      clearTimeout(timer);
+      timer = setTimeout(recompute, 400);
+    });
   })();
-  onScopeDispose(() => sub?.unsubscribe());
+  onScopeDispose(() => {
+    clearTimeout(timer);
+    sub?.unsubscribe();
+  });
   return map;
 }
 

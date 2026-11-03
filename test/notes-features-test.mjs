@@ -34,6 +34,7 @@ const {
 const { listRevisions, snapshotNote, restoreRevision, purgeRevisions } = await import('../src/db/revisions.js');
 const { getOrCreateDailyNote, findTodaysNote } = await import('../src/db/daily.js');
 const { resolveOutgoing, findBacklinks } = await import('../src/db/links.js');
+const { buildWidgetSnapshot } = await import('../src/platform/widgets.js');
 
 let failures = 0;
 function check(name, cond) {
@@ -122,6 +123,14 @@ check('daily note is reused', today1.id === today2.id);
 check('daily note is in Journal notebook', !!(await db.notebooks.findOne(today1.notebookId).exec()));
 check('daily note has checklist content', today1.content.includes('data-list'));
 check('findTodaysNote matches', (await findTodaysNote())?.id === today1.id);
+
+console.log('— widget snapshot');
+const widgetNote = await createNote({ title: 'Widget fresh', content: '<p>live snapshot</p>' });
+const snapshot = await buildWidgetSnapshot();
+check('snapshot includes newly added note', snapshot.notes.some((n) => n.title === 'Widget fresh'));
+check('snapshot total is current', snapshot.total > 0);
+check('snapshot note has renderable fields', snapshot.notes.every((n) => n.id && typeof n.title === 'string' && typeof n.updated === 'number'));
+await purgeNote(widgetNote.id);
 
 console.log(failures ? `\n${failures} NOTE FEATURE TEST FAILURES` : '\nALL NOTE FEATURE TESTS PASSED');
 process.exit(failures ? 1 : 0);

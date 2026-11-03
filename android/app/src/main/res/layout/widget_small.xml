@@ -4,47 +4,65 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_bg"
-    android:gravity="center"
     android:orientation="vertical"
-    android:padding="12dp">
+    android:padding="10dp">
 
-    <ImageView
-        android:layout_width="34dp"
-        android:layout_height="34dp"
-        android:contentDescription="@string/app_name"
-        android:src="@mipmap/ic_launcher" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:letterSpacing="0.14"
-        android:text="@string/app_name"
-        android:textAllCaps="true"
-        android:textColor="@color/widget_text"
-        android:textSize="12sp"
-        android:textStyle="bold" />
-
-    <FrameLayout
-        android:id="@+id/widget_add"
-        android:layout_width="52dp"
-        android:layout_height="52dp"
-        android:layout_marginTop="10dp"
-        android:background="@drawable/widget_add_bg">
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
 
         <ImageView
             android:layout_width="24dp"
             android:layout_height="24dp"
-            android:layout_gravity="center"
-            android:contentDescription="@string/widget_new_note"
-            android:src="@drawable/widget_ic_add" />
-    </FrameLayout>
+            android:contentDescription="@string/app_name"
+            android:src="@mipmap/ic_launcher" />
+
+        <TextView
+            android:id="@+id/widget_count"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/widget_muted"
+            android:textSize="10.5sp" />
+
+        <FrameLayout
+            android:id="@+id/widget_add"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/widget_add_bg">
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_gravity="center"
+                android:contentDescription="@string/widget_new_note"
+                android:src="@drawable/widget_ic_add" />
+        </FrameLayout>
+    </LinearLayout>
 
     <TextView
-        android:id="@+id/widget_count"
-        android:layout_width="wrap_content"
+        android:id="@+id/widget_latest_title"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="6dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="@color/widget_text"
+        android:textSize="13.5sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/widget_latest_snippet"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:ellipsize="end"
+        android:maxLines="2"
         android:textColor="@color/widget_muted"
-        android:textSize="11sp" />
+        android:textSize="10.5sp" />
 </LinearLayout>

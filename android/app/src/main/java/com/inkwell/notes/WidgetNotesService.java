@@ -69,7 +69,8 @@ public class WidgetNotesService extends RemoteViewsService {
             JSONObject note = notes.get(position);
             RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_note_item);
             try {
-                views.setTextViewText(R.id.item_title, note.optString("title", "Untitled"));
+                String title = note.optString("title", "").trim();
+                views.setTextViewText(R.id.item_title, title.isEmpty() ? context.getString(R.string.widget_untitled) : title);
                 String snippet = note.optString("snippet", "");
                 views.setTextViewText(R.id.item_snippet, snippet);
                 views.setViewVisibility(R.id.item_snippet, snippet.isEmpty() ? android.view.View.GONE : android.view.View.VISIBLE);
