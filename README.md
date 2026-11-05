@@ -48,7 +48,8 @@ Everything above works **completely offline**. There is no account, no server an
   integration (text + images), copy to clipboard.
 - **Full JSON backup/restore** — notes, notebooks and attachments in one file, all local.
 - **Templates** with seven built-ins and your own custom templates saved from any note.
-- **Autosave** with a debounced editor, a saved indicator and full crash-safe persistence.
+- **Autosave** runs only after the editor goes idle, pulls the plain-text projection once and
+  serialises writes — so rapid typing/backspacing never waits on IndexedDB.
 - **Outline panel** and **reading time** for longer pieces.
 - **Daily journal** shortcut builds a dated note in the Journal notebook and reuses it all day.
 
@@ -84,8 +85,9 @@ Everything above works **completely offline**. There is no account, no server an
 
 ### Android integration
 
-- **Two widget sizes**: 2×2 quick capture and 4×2 pinned/recent list, fed by a private
-  SharedPreferences snapshot.
+- **Two widget sizes**: 2×2 latest-note card and 4×2 journal/recent/pinned list, with native
+  quick capture that works without opening the WebView. Widgets repaint from a private snapshot
+  within 250 ms of a note change and flush once more when the app backgrounds.
 - **Per-note reminders** with exact local notifications; tapping opens the note. The daily nudge
   opens today's journal.
 - **Hardware back flow**: closes overlays/search/selection first, walks back through screens, then

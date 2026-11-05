@@ -24,7 +24,7 @@ export async function buildWidgetSnapshot() {
   const rest = docs.filter((d) => !d.pinned);
   const ordered = [...pinned, ...rest];
 
-  const total = noteList.filter((n) => !n.trashed && !n.locked).length;
+  const total = noteList.filter((n) => !n.trashed && !n.locked && !n.archived).length;
 
   // Today's journal row sits above the list; never create it from here (widget
   // refreshes must stay read-only).
@@ -72,7 +72,7 @@ async function push() {
   }
 }
 
-export const syncWidgets = debounce(push, 600);
+export const syncWidgets = debounce(push, 250);
 
 /** Push the snapshot right now (Settings → Refresh widgets). */
 export async function syncWidgetNow() {

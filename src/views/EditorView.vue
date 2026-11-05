@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, ref, shallowRef, watch } from 'vue';
+import { computed, nextTick, onUnmounted, ref, shallowRef, watch } from 'vue';
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router';
 import { useToast } from 'primevue/usetoast';
 import { useConfirm } from 'primevue/useconfirm';
@@ -42,6 +42,7 @@ import { snapshotNote } from '../db/revisions.js';
 import { extractHeadings, readingTime, extractWikiLinks } from '../utils/links.js';
 import { loadTemplates, findTemplate, saveCustomTemplate } from '../utils/templates.js';
 import { openPalette } from '../composables/usePalette.js';
+import { registerFlusher } from '../composables/useFlushRegistry.js';
 
 registerAttImageBlot();
 
@@ -55,7 +56,7 @@ const recorder = useRecorder();
 
 const docRef = ref(null);
 const loaded = ref(false);
-const fields = ref({ title: '', content: '', color: '', notebookId: '', tags: [] });
+const fields = ref({ title: '', content: '', contentText: '', color: '', notebookId: '', tags: [] });
 const reminderAt = ref(0);
 const pinned = ref(false);
 const favorite = ref(false);
@@ -89,10 +90,10 @@ const isDraft = computed(() => route.params.id === 'new' && !docRef.value);
 const notebookTitle = computed(
   () => notebooks.value.find((n) => n.id === fields.value.notebookId)?.title || ''
 );
-const words = computed(() => wordCount(htmlToText(fields.value.content)));
+const words = computed(() => wordCount(fields.value.contentText || ''));
 const readMin = computed(() => readingTime(words.value));
 const outline = computed(() => extractHeadings(fields.value.content));
-const wikiLinks = computed(() => extractWikiLinks(htmlToText(fields.value.content)).length);
+const wikiLinks = computed(() => extractWikiLinks(fields.value.contentText || '').length);
 const images = computed(() => (docRef.value?.atts || []).filter((a) => a.type.startsWith('image/')));
 const audios = computed(() => (docRef.value?.atts || []).filter((a) => a.type.startsWith('audio/')));
 const files = computed(() => {
@@ -157,7 +158,7 @@ async function openLinks() {
 
 async function openSaveTemplate() {
   await flushSave();
-  if (!docRef.value && !fields.value.content.trim() && !fields.value.title.trim()) {
+  if (!docRef.value && !fields.value.contentText.trim() && !fields.value.title.trim()) {
     toast.add({ severity: 'info', summary: 'Write something first', life: 1800 });
     return;
   }
@@ -253,7 +254,7 @@ watch(() => route.params.id, (id) => {
   if (id !== loadedId) {
     loaded.value = false;
     docRef.value = null;
-    fields.value = { title: '', content: '', color: '', notebookId: '', tags: [] };
+    fields.value = { title: '', content: '', contentText: '', color: '', notebookId: '', tags: [] };
     load();
   }
 });
@@ -266,6 +267,7 @@ async function applyTemplate(tplId) {
   fields.value = {
     title: tpl.title || '',
     content: tpl.content || '',
+    contentText: htmlToText(tpl.content || ''),
     color: tpl.color || '',
     notebookId: tpl.notebookId || '',
     tags: [...(tpl.tags || [])]
@@ -275,7 +277,7 @@ async function applyTemplate(tplId) {
     pushContent(fields.value.content);
     pendingContent.value = null;
   }
-  if (fields.value.title || htmlToText(fields.value.content).trim()) scheduleSave();
+  if (fields.value.title || fields.value.contentText.trim()) scheduleSave();
 }
 
 watch(
@@ -319,24 +321,67 @@ watch(
       placeholder: 'Start writing…',
       modules: { toolbar: false }
     });
-    q.on('text-change', (_delta, _old, source) => {
+    q.on('text-change', (delta, _old, source) => {
       if (source !== 'user') return;
-      convertPastedDataImages();
+      // Deletions must never trigger attachment work or a formats re-render.
+      const inserted = (delta?.ops || []).some(
+        (op) => op.insert !== undefined && !(typeof op.insert === 'string' && op.insert.length === 0)
+      );
+      if (inserted) scheduleImageConversion();
       scheduleSave();
     });
     q.on('selection-change', (range) => {
-      formats.value = range ? q.getFormat(range) : {};
+      scheduleFormats(q, range);
     });
+    // Android WebView's spellchecker keeps re-scanning the whole document while
+    // deleting ranges; the editor does not need it for note writing.
+    q.root.setAttribute('spellcheck', 'false');
     quill.value = q;
   },
   { flush: 'post' }
 );
 
+/* Keep toolbar state off the keystroke path: coalesce selection updates and
+   only touch Vue when the actual formats changed. */
+let formatsTimer = 0;
+function sameFormats(a, b) {
+  const aKeys = Object.keys(a || {});
+  const bKeys = Object.keys(b || {});
+  if (aKeys.length !== bKeys.length) return false;
+  return aKeys.every((key) => String(a[key]) === String(b[key]));
+}
+function scheduleFormats(q, range) {
+  clearTimeout(formatsTimer);
+  formatsTimer = setTimeout(() => {
+    if (quill.value !== q) return;
+    let next;
+    try {
+      next = range ? q.getFormat(range) : {};
+    } catch {
+      return;
+    }
+    if (!sameFormats(next, formats.value)) formats.value = next;
+  }, 90);
+}
+
+let convertingImages = false;
+const scheduleImageConversion = debounce(async () => {
+  if (convertingImages) return;
+  convertingImages = true;
+  try {
+    await convertPastedDataImages();
+  } finally {
+    convertingImages = false;
+  }
+}, 350);
+
 function pullContent() {
   const q = quill.value;
   if (!q) return;
   const html = q.getSemanticHTML();
-  fields.value.content = html === '<p><br></p>' ? '' : html;
+  const content = html === '<p><br></p>' ? '' : html;
+  fields.value.content = content;
+  fields.value.contentText = htmlToText(content);
 }
 
 function pushContent(html) {
@@ -354,23 +399,69 @@ watch(quill, (q) => {
   refreshFigureSrcs();
 });
 
-const scheduleSave = debounce(() => flushSave(), 700);
+let idleSave = null;
 
-async function flushSave() {
+function cancelIdleSave() {
+  if (idleSave === null) return;
+  if (typeof cancelIdleCallback === 'function') cancelIdleCallback(idleSave);
+  else clearTimeout(idleSave);
+  idleSave = null;
+}
+
+const saveDebounced = debounce(() => {
+  if (typeof requestIdleCallback === 'function') {
+    idleSave = requestIdleCallback(() => {
+      idleSave = null;
+      flushSave();
+    }, { timeout: 300 });
+  } else {
+    idleSave = setTimeout(() => {
+      idleSave = null;
+      flushSave();
+    }, 0);
+  }
+}, 700);
+
+/** Any new edit cancels a pending idle save so writing is never interrupted. */
+function scheduleSave() {
+  cancelIdleSave();
+  saveDebounced();
+}
+
+function cancelScheduledSave() {
+  saveDebounced.cancel();
+  cancelIdleSave();
+}
+
+let saveChain = Promise.resolve();
+
+onUnmounted(() => {
+  cancelScheduledSave();
+  scheduleImageConversion.cancel();
+  clearTimeout(formatsTimer);
+});
+
+/** Serialise saves so a debounce and a route-leave can never overlap. */
+function flushSave() {
+  const run = () => doFlushSave();
+  saveChain = saveChain.then(run, run);
+  return saveChain;
+}
+
+async function doFlushSave() {
+  if (docRef.value?.locked) return; // vault notes never write plaintext through the editor
   pullContent();
   const f = fields.value;
   const payload = {
     title: f.title,
     content: f.content,
+    contentText: f.contentText,
     color: f.color,
     notebookId: f.notebookId,
     tags: [...(f.tags || [])]
   };
   const emptyDraft =
-    !docRef.value &&
-    !payload.title.trim() &&
-    !htmlToText(payload.content).trim() &&
-    route.params.id === 'new';
+    !docRef.value && !payload.title.trim() && !payload.contentText.trim() && route.params.id === 'new';
   if (emptyDraft) return;
   saving.value = true;
   try {
@@ -396,7 +487,14 @@ async function flushSave() {
   }
 }
 
+// Let the app shell persist the editor before backgrounding/widget sync.
+registerFlusher(async () => {
+  cancelScheduledSave();
+  await flushSave();
+});
+
 onBeforeRouteLeave(async () => {
+  cancelScheduledSave();
   await flushSave();
 });
 
@@ -497,6 +595,7 @@ async function doImportMarkdown() {
     }
     const md = new TextDecoder().decode(file.bytes ?? new Uint8Array(0));
     fields.value.content = markdownToHtml(md);
+    fields.value.contentText = htmlToText(fields.value.content);
     pushContent(fields.value.content);
     const h1 = extractFirstH1(md);
     if (!fields.value.title.trim() && h1) fields.value.title = h1;
@@ -703,7 +802,7 @@ async function share() {
 
 async function copyText() {
   pullContent();
-  const text = `${fields.value.title}\n\n${htmlToText(fields.value.content)}`;
+  const text = `${fields.value.title}\n\n${fields.value.contentText}`;
   if (isNative) await Clipboard.write({ string: text });
   else await navigator.clipboard?.writeText(text);
   toast.add({ severity: 'success', summary: 'Copied', life: 1400 });

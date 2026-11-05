@@ -11,7 +11,7 @@ import { snapshotNote, purgeRevisions } from './revisions.js';
 export async function createNote(fields = {}) {
   const now = Date.now();
   const content = fields.content || '';
-  const contentText = htmlToText(content);
+  const contentText = fields.contentText ?? htmlToText(content);
   return commitNote({
     id: uid('n'),
     title: fields.title || '',
